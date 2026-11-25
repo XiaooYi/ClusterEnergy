@@ -1,0 +1,9 @@
+/certs/
+/dist/
+/runtime/
+/.idea/
+/scripts/deploy.py
+/b_node/frontend/dist/
+/b_node/frontend/node_modules/
+__pycache__/
+*.py[cod]

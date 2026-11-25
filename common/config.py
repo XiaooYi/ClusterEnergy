@@ -1,4 +1,4 @@
-"""Shared configuration constants and metric schema for ClusterEnergy."""
+"""Shared sampling and metric defaults for ClusterEnergy."""
 
 SCHEMA_VERSION = 1
 
@@ -13,5 +13,6 @@ ALL_METRIC_FIELDS = TABLE1_FIELDS + TABLE2_FIELDS
 
 DEFAULT_EXPORTER_PORT = 19100
 DEFAULT_AGGREGATOR_PORT = 19200
-DEFAULT_POLL_INTERVAL_SEC = 2.0
-DEFAULT_HISTORY_LEN = 150  # 5 minutes at 2s interval
+DEFAULT_POLL_INTERVAL_SEC = 5.0
+TREND_SECONDS = 300
+PAGE_SIZE = 5000

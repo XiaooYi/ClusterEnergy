@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Simulated C-node energy collector writing atomic latest.json every 2 seconds."""
+"""Simulated C-node energy collector writing atomic latest.json."""
 
 import argparse
 from datetime import datetime, timezone
@@ -108,6 +108,8 @@ def main() -> int:
         payload = {
             "schema_version": SCHEMA_VERSION,
             "node_id": args.node_id,
+            "node_type": "compute",
+            "power_w": round(sum(metrics.values()), 3),
             "host_ip": args.host_ip,
             "seq": seq,
             "collected_at": ts_now,

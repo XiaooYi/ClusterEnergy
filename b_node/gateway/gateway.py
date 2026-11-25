@@ -3,18 +3,15 @@
 
 import argparse
 from datetime import datetime, timedelta, timezone
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 import json
 import os
 import signal
 import sqlite3
-import ssl
 import sys
 import threading
 import time
-import urllib.parse
-import urllib.request
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -33,13 +30,16 @@ def now_iso() -> str:
     return local_now().isoformat(timespec="milliseconds")
 
 
-def create_client_ssl_context(ca_file: str, cert_file: str, key_file: str) -> ssl.SSLContext:
-    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.minimum_version = ssl.TLSVersion.TLSv1_2
-    ctx.check_hostname = True
-    ctx.load_verify_locations(cafile=ca_file)
-    ctx.load_cert_chain(certfile=cert_file, keyfile=key_file)
-    return ctx
+PROJECT_ROOT = str(Path(__file__).resolve().parents[2])
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
+
+from b_node.gateway.jobs import estimate_jobs, running_jobs
+from common.config import DEFAULT_POLL_INTERVAL_SEC
+from common.samples import since, stamp, utc_time
+from common.storage import SampleStore
+from common.tls import create_client_ssl_context
+from common.transport import JsonHandler, get_json, int_param, poll_loop, read_json_file, replay
 
 
 class EnergyStore:
@@ -152,6 +152,37 @@ class EnergyStore:
             cutoff = (dt - timedelta(days=35)).strftime("%Y-%m-%d")
             self.conn.execute("DELETE FROM minute_stats WHERE date_str < ?", (cutoff,))
             self.conn.commit()
+
+
+    def record_cluster(self, sampled_at, power, max_gap, retention_days):
+        when = utc_time(sampled_at)
+        with self.lock, self.conn:
+            row = self.conn.execute("SELECT value FROM meta WHERE key = 'cluster_sample'").fetchone()
+            previous = json.loads(row[0]) if row else None
+            if previous is not None and sampled_at <= previous["ts"]:
+                return
+            self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('cluster_sample', ?)",
+                              (json.dumps({"ts": sampled_at, "power": power}),))
+            if power is None:
+                return
+            energy = 0.0
+            if previous is not None and previous["power"] is not None:
+                seconds = (when - utc_time(previous["ts"])).total_seconds()
+                if 0 < seconds <= max_gap:
+                    energy = previous["power"] * seconds / 3600000
+            dt = when.astimezone(TZ_CST)
+            self.conn.execute("""
+                INSERT INTO minute_stats
+                    (ts_minute, date_str, sum_power, max_power, sum_eff, energy_kwh, samples)
+                VALUES (?, ?, ?, ?, 0, ?, 1)
+                ON CONFLICT(ts_minute) DO UPDATE SET
+                    sum_power = sum_power + excluded.sum_power,
+                    max_power = MAX(max_power, excluded.max_power),
+                    energy_kwh = energy_kwh + excluded.energy_kwh, samples = samples + 1
+            """, (dt.strftime("%Y-%m-%dT%H:%M"), dt.strftime("%Y-%m-%d"), power, power, energy))
+            cutoff = (dt - timedelta(days=retention_days)).strftime("%Y-%m-%d")
+            self.conn.execute("DELETE FROM minute_stats WHERE date_str < ?", (cutoff,))
+
 
     def get_today_kwh(self) -> float:
         today_str = local_now().strftime("%Y-%m-%d")
@@ -333,184 +364,170 @@ class EnergyStore:
 
 
 class GatewayState:
-    def __init__(self, upstream_base: str, ssl_ctx: ssl.SSLContext, store: EnergyStore, interval: float) -> None:
-        self.upstream_base = upstream_base.rstrip("/")
-        self.ssl_ctx = ssl_ctx
-        self.store = store
+    def __init__(self, upstream, context, stats, archive, interval, retention, hot_days, mode, jobs_file):
+        self.upstream = upstream
+        self.context = context
+        self.stats = stats
+        self.archive = archive
         self.interval = interval
-        self.lock = threading.Lock()
-        self.snapshot: Dict[str, Any] = {
-            "updated_at": None,
-            "poll_round": 0,
-            "cluster": {
-                "total_power": 0.0,
-                "core_power": 0.0,
-                "ddq_power": 0.0,
-                "ni_out_power": 0.0,
-                "hvm_out_power": 0.0,
-                "efficiency_ratio": 0.0,
-                "online_nodes": 0,
-                "total_nodes": 0,
-                "today_kwh": 0.0,
-            },
-            "nodes": [],
-            "alerts": [],
-        }
-        self.history: Dict[str, Any] = {"updated_at": None, "points": []}
+        self.retention = retention
+        self.hot_days = hot_days
+        self.mode = mode
+        self.jobs_file = jobs_file
+        self.snapshot = {"nodes": [], "racks": [], "cluster": {}, "mode": mode}
+        self.history = {"points": []}
         self.upstream_ok = False
-        self.upstream_error: Optional[str] = "initializing"
-        self.last_pull_at: Optional[str] = None
-        self.last_sample_mono: Optional[float] = None
+        self.upstream_error = None
+        self.history_error = None
+        self.history_gap = archive.has_gap("A")
+        self.next_cleanup = 0.0
 
-    def _get_json(self, path: str) -> Dict[str, Any]:
-        req = urllib.request.Request(f"{self.upstream_base}{path}", method="GET")
-        with urllib.request.urlopen(req, context=self.ssl_ctx, timeout=2.0) as resp:
-            return json.loads(resp.read().decode("utf-8"))
-
-    def poll_once(self) -> None:
-        now_dt = local_now()
-        ts = now_dt.isoformat(timespec="milliseconds")
-        mono_now = time.monotonic()
+    def poll_once(self):
         try:
-            snap = self._get_json("/api/snapshot")
-            hist = self._get_json("/api/history")
-            cluster = snap.get("cluster") or {}
-            total_power = float(cluster.get("total_power", 0.0))
-            eff_ratio = float(cluster.get("efficiency_ratio", 0.0))
-            dt_sec = self.interval if self.last_sample_mono is None else min(10.0, max(0.2, mono_now - self.last_sample_mono))
-            self.last_sample_mono = mono_now
-            if total_power > 0:
-                self.store.record_sample(now_dt, total_power, eff_ratio, dt_sec)
+            snapshot = get_json(self.upstream, self.context, "/api/snapshot")
+            if snapshot.get("mode") != self.mode:
+                raise ValueError("A and B must use the same real or simulated mode")
+            history = get_json(self.upstream, self.context, "/api/history")
+            power = snapshot.get("cluster", {}).get("total_power")
+            sampled_at = snapshot.get("sampled_at") or snapshot["updated_at"]
+            self.stats.record_cluster(sampled_at, power, 3 * self.interval, self.retention)
+            self.snapshot = snapshot
+            self.history = history
+            self.upstream_ok = True
+            self.upstream_error = None
+        except (OSError, ValueError, KeyError) as exc:
+            self.upstream_ok = False
+            self.upstream_error = str(exc)
 
-            self.store.record_alerts(snap.get("alerts") or [])
-            cluster["today_kwh"] = self.store.get_today_kwh()
-            cluster["today_alerts"] = self.store.get_today_alerts_count()
-            snap["cluster"] = cluster
-
-            with self.lock:
-                self.snapshot = snap
-                self.history = hist
-                self.upstream_ok = True
-                self.upstream_error = None
-                self.last_pull_at = ts
-        except Exception as exc:
-            with self.lock:
-                self.upstream_ok = False
-                self.upstream_error = str(exc)
-                self.last_pull_at = ts
-
-    def get_snapshot_bytes(self) -> bytes:
-        with self.lock:
-            out = dict(self.snapshot)
-            out["gateway"] = {
-                "upstream_ok": self.upstream_ok,
-                "upstream_error": self.upstream_error,
-                "last_pull_at": self.last_pull_at,
-            }
-            return json.dumps(out, ensure_ascii=False).encode("utf-8")
-
-    def get_history_bytes(self) -> bytes:
-        with self.lock:
-            return json.dumps(self.history, ensure_ascii=False).encode("utf-8")
-
-
-class GatewayHandler(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
-    state: GatewayState = None  # type: ignore
-
-    def log_message(self, format: str, *args) -> None:
-        return
-
-    def _send_json(self, status: int, body: bytes) -> None:
-        self.send_response(status)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def do_GET(self) -> None:
-        parsed = urllib.parse.urlparse(self.path)
-        path = parsed.path
-        if path == "/healthz":
-            ok = self.state.upstream_ok
-            body = json.dumps({"status": "ok", "upstream_ok": ok}).encode("utf-8")
-            self._send_json(HTTPStatus.OK, body)
-        elif path == "/api/snapshot":
-            self._send_json(HTTPStatus.OK, self.state.get_snapshot_bytes())
-        elif path == "/api/history":
-            self._send_json(HTTPStatus.OK, self.state.get_history_bytes())
-        elif path == "/api/stats":
-            qs = urllib.parse.parse_qs(parsed.query)
-            rng = (qs.get("range") or ["today"])[0]
-            if rng not in ("today", "7d", "30d"):
-                rng = "today"
-            data = self.state.store.query_stats(rng)
-            self._send_json(HTTPStatus.OK, json.dumps(data, ensure_ascii=False).encode("utf-8"))
-        elif path == "/api/alerts":
-            qs = urllib.parse.parse_qs(parsed.query)
-            rng = (qs.get("range") or ["7d"])[0]
-            if rng not in ("today", "7d", "30d"):
-                rng = "7d"
-            node = (qs.get("node") or ["all"])[0]
-            level = (qs.get("level") or ["all"])[0]
+        if self.upstream_ok:
             try:
-                page = int((qs.get("page") or ["1"])[0])
-            except ValueError:
-                page = 1
-            try:
-                page_size = int((qs.get("page_size") or ["12"])[0])
-            except ValueError:
-                page_size = 12
-            data = self.state.store.query_alerts(rng, node, level, page, page_size)
-            self._send_json(HTTPStatus.OK, json.dumps(data, ensure_ascii=False).encode("utf-8"))
-        else:
-            self._send_json(HTTPStatus.NOT_FOUND, b'{"error":"not found"}')
+                self.history_gap = replay("A", self.upstream, self.context, self.archive) or self.history_gap
+                self.history_error = None
+            except (OSError, ValueError, KeyError) as exc:
+                self.history_error = str(exc)
+        if time.monotonic() >= self.next_cleanup:
+            self.archive.maintain(stamp(), self.retention, self.hot_days)
+            self.next_cleanup = time.monotonic() + 30
+
+    def status(self):
+        return {"upstream_ok": self.upstream_ok, "upstream_error": self.upstream_error,
+                "history_error": self.history_error, "history_gap": self.history_gap}
+
+    def source_time(self):
+        return self.snapshot.get("updated_at") or stamp()
+
+    def job_stats(self, job_id=None):
+        if not self.jobs_file:
+            return {"status": "disabled", "jobs": []}
+        now = self.source_time()
+        try:
+            path = Path(self.jobs_file)
+            updated_at = path.stat().st_mtime
+            if time.time() - updated_at > 180:
+                return {"status": "stale", "jobs": []}
+            jobs = running_jobs(read_json_file(path))
+        except (OSError, ValueError) as exc:
+            return {"status": "unavailable", "jobs": [], "error": str(exc)}
+
+        if job_id is None:
+            return {"status": "ok", "jobs": [{"job_id": job["job_id"], "started_at": job["started_at"],
+                                              "node_count": len(job["node_ids"])} for job in jobs]}
+
+        # Bound an on-demand estimate. The job view labels this time interval.
+        def load_history(node, start, end):
+            return self.archive.history(node, since(start, 3 * self.interval), end, 5000)
+
+        results = estimate_jobs(jobs, load_history, now, 3 * self.interval, since(now, 3600), job_id=job_id)
+        return {"status": "ok", "jobs": results, "observed_at": now}
 
 
-def main() -> int:
+class GatewayHandler(JsonHandler):
+    state = None
+
+    def do_GET(self):
+        path, params = self.route()
+        try:
+            if path == "/healthz":
+                self.send_json(200, {"status": "ok", **self.state.status()})
+            elif path == "/api/snapshot":
+                self.send_json(200, {**self.state.snapshot, "gateway": self.state.status()})
+            elif path == "/api/history":
+                self.send_json(200, self.state.history)
+            elif path == "/api/stats":
+                period = params.get("range", ["today"])[0]
+                if period not in ("today", "7d", "30d"):
+                    raise ValueError("range must be today, 7d or 30d")
+                self.send_json(200, self.state.stats.query_stats(period))
+            elif path == "/api/alerts":
+                self.send_json(200, self.state.stats.query_alerts(
+                    params.get("range", ["7d"])[0], params.get("node", ["all"])[0],
+                    params.get("level", ["all"])[0], int_param(params, "page", 1, 1, 1_000_000),
+                    int_param(params, "page_size", 12, 1, 200)))
+            elif path == "/api/node-history":
+                node = params.get("node", [""])[0]
+                if not node:
+                    raise ValueError("node is required")
+                end = stamp(utc_time(params.get("to", [self.state.source_time()])[0]))
+                start = stamp(utc_time(params.get("from", [since(end, 3600)])[0]))
+                if start > end:
+                    raise ValueError("from must be earlier than to")
+                limit = int_param(params, "limit", 1000, 1, 5000)
+                points = self.state.archive.history(node, start, end, limit + 1)
+                self.send_json(200, {"node_id": node, "samples": points[:limit],
+                                     "has_more": len(points) > limit})
+            elif path == "/api/jobs":
+                self.send_json(200, self.state.job_stats(params.get("job", [None])[0]))
+            else:
+                self.send_json(404, {"error": "not found"})
+        except (ValueError, OverflowError, OSError) as exc:
+            self.send_json(400, {"error": str(exc)})
+
+
+def main():
     parser = argparse.ArgumentParser(description="B-node mTLS pull gateway")
     parser.add_argument("--bind", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=18081)
     parser.add_argument("--upstream", default="https://127.0.0.1:19200")
-    parser.add_argument("--interval", type=float, default=2.0)
-    parser.add_argument("--db", default="/data/energy_history.db")
+    parser.add_argument("--interval", type=float, default=DEFAULT_POLL_INTERVAL_SEC)
+    parser.add_argument("--mode", choices=["real", "simulated"], default="real")
+    parser.add_argument("--db")
+    parser.add_argument("--archive-db")
+    parser.add_argument("--retention-days", type=float, default=30)
+    parser.add_argument("--hot-days", type=float, default=30)
+    parser.add_argument("--jobs-file")
     parser.add_argument("--ca", required=True)
     parser.add_argument("--cert", required=True)
     parser.add_argument("--key", required=True)
     args = parser.parse_args()
-
-    ssl_ctx = create_client_ssl_context(args.ca, args.cert, args.key)
-    store = EnergyStore(args.db)
-    state = GatewayState(args.upstream, ssl_ctx, store, args.interval)
+    if args.interval <= 0 or args.retention_days <= 0 or args.hot_days <= 0:
+        parser.error("interval and retention must be positive")
+    if not args.upstream.startswith("https://"):
+        parser.error("A upstream must use HTTPS")
+    context = create_client_ssl_context(args.ca, args.cert, args.key)
+    stats_path = args.db or f"runtime/b-{args.mode}.sqlite"
+    stats = EnergyStore(stats_path)
+    archive = SampleStore(args.archive_db or str(Path(stats_path).with_suffix(".samples.sqlite")))
+    state = GatewayState(args.upstream, context, stats, archive, args.interval, args.retention_days,
+                         args.hot_days, args.mode, args.jobs_file)
     GatewayHandler.state = state
-
-    stop_event = threading.Event()
-
-    def loop() -> None:
-        while not stop_event.is_set():
-            t0 = time.monotonic()
-            state.poll_once()
-            stop_event.wait(max(0.1, args.interval - (time.monotonic() - t0)))
-
-    threading.Thread(target=loop, daemon=True).start()
-
+    stop = threading.Event()
     server = ThreadingHTTPServer((args.bind, args.port), GatewayHandler)
-    server.daemon_threads = True
+    thread = threading.Thread(target=poll_loop, args=(state.poll_once, args.interval, stop), daemon=True)
 
-    def handle_sig(_signum, _frame):
-        stop_event.set()
+    def stop_server(*_args):
         raise SystemExit(0)
 
-    signal.signal(signal.SIGTERM, handle_sig)
-    signal.signal(signal.SIGINT, handle_sig)
-
+    signal.signal(signal.SIGTERM, stop_server)
+    signal.signal(signal.SIGINT, stop_server)
+    thread.start()
     try:
         server.serve_forever(poll_interval=0.5)
     finally:
-        stop_event.set()
+        stop.set()
         server.server_close()
-        store.close()
+        thread.join()
+        stats.close()
+        archive.close()
     return 0
 
 

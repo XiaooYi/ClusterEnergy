@@ -1,94 +1,101 @@
 #!/usr/bin/env python3
-"""Package offline deployment tarballs + sha256 checksums for C, A, and B nodes."""
+"""Build architecture-checked Docker archives and package offline deploy bundles."""
 
+import argparse
 import hashlib
-import io
+import json
 import os
+from pathlib import Path
+import subprocess
 import tarfile
-
-ROOT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DIST_DIR = os.path.join(ROOT_DIR, "dist")
+import tempfile
 
 
-def add_path(tf: tarfile.TarFile, abs_path: str, arc_path: str, executable: bool = False) -> None:
-    if os.path.isdir(abs_path):
-        for root, dirs, files in os.walk(abs_path):
-            dirs[:] = [d for d in dirs if d not in ("__pycache__", "node_modules", "dist", ".git")]
-            for fn in files:
-                if fn.endswith((".pyc", ".pyo")):
-                    continue
-                full = os.path.join(root, fn)
-                rel = os.path.relpath(full, abs_path).replace("\\", "/")
-                is_exec = executable or fn.endswith(".sh")
-                add_path(tf, full, f"{arc_path}/{rel}", executable=is_exec)
-        return
-
-    with open(abs_path, "rb") as f:
-        data = f.read()
-    # Normalize LF for shell/python scripts so Linux executes cleanly.
-    if abs_path.endswith((".sh", ".py")):
-        data = data.replace(b"\r\n", b"\n")
-    info = tarfile.TarInfo(name=arc_path)
-    info.size = len(data)
-    info.mode = 0o755 if (executable or abs_path.endswith(".sh")) else 0o644
-    tf.addfile(info, io.BytesIO(data))
+ROOT = Path(__file__).resolve().parents[1]
+ROLES = {"a": ("a",), "b": ("gateway", "web"), "c": ("c",)}
 
 
-def build_bundle(bundle_name: str, items) -> str:
-    os.makedirs(DIST_DIR, exist_ok=True)
-    out_path = os.path.join(DIST_DIR, bundle_name)
-    with tarfile.open(out_path, "w:gz") as tf:
-        for src_rel, dst_rel in items:
-            add_path(tf, os.path.join(ROOT_DIR, src_rel), dst_rel)
-
-    h = hashlib.sha256()
-    with open(out_path, "rb") as f:
-        for chunk in iter(lambda: f.read(65536), b""):
-            h.update(chunk)
-    digest = h.hexdigest()
-    with open(f"{out_path}.sha256", "w", encoding="utf-8", newline="\n") as f:
-        f.write(f"{digest}  {bundle_name}\n")
-    print(f"Built {bundle_name} ({os.path.getsize(out_path)} bytes) sha256={digest}")
-    return out_path
+def verify_platform(archive, expected, image):
+    with tarfile.open(archive) as tar:
+        manifest = json.load(tar.extractfile("manifest.json"))
+        records = [record for record in manifest if image in (record.get("RepoTags") or [])]
+        if len(records) != 1:
+            raise ValueError(f"{archive}: expected one image tagged {image}")
+        config = json.load(tar.extractfile(records[0]["Config"]))
+        actual = f"{config['os']}/{config['architecture']}"
+        if actual != expected:
+            raise ValueError(f"{image} has platform {actual}, expected {expected}")
 
 
-def main() -> int:
-    build_bundle(
-        "c_node_bundle.tar.gz",
-        [
-            ("common", "common"),
-            ("c_node", "c_node"),
-            ("certs/ca.crt", "certs/ca.crt"),
-            ("certs/ln2.crt", "certs/ln2.crt"),
-            ("certs/ln2.key", "certs/ln2.key"),
-            ("certs/ln4.crt", "certs/ln4.crt"),
-            ("certs/ln4.key", "certs/ln4.key"),
-        ],
-    )
-    build_bundle(
-        "a_node_bundle.tar.gz",
-        [
-            ("common", "common"),
-            ("a_node", "a_node"),
-            ("certs/ca.crt", "certs/ca.crt"),
-            ("certs/a_client.crt", "certs/a_client.crt"),
-            ("certs/a_client.key", "certs/a_client.key"),
-            ("certs/a_server.crt", "certs/a_server.crt"),
-            ("certs/a_server.key", "certs/a_server.key"),
-        ],
-    )
-    build_bundle(
-        "b_node_bundle.tar.gz",
-        [
-            ("b_node/docker-compose.yml", "docker-compose.yml"),
-            ("b_node/start_docker.sh", "start_docker.sh"),
-            ("b_node/gateway", "gateway"),
-            ("b_node/frontend", "frontend"),
-            ("certs/ca.crt", "certs/ca.crt"),
-            ("certs/b_client.crt", "certs/b_client.crt"),
-            ("certs/b_client.key", "certs/b_client.key"),
-        ],
-    )
+def sha256(filename):
+    digest = hashlib.sha256()
+    with filename.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def build_image(name, image, platform, destination, builder, base_images):
+    command = ["docker", "buildx", "build", "--platform", platform, "--target", name,
+               "--tag", image, "--output", f"type=docker,dest={destination}"]
+    if builder:
+        command.extend(["--builder", builder])
+    for variable, reference in base_images.items():
+        command.extend(["--build-arg", f"{variable}={reference}"])
+    subprocess.run([*command, str(ROOT)], check=True)
+
+
+def package(roles, platform, out, builder=None, images_dir=None, base_images=None):
+    arch = platform.split("/")[1]
+    out.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=f".build-{arch}-", dir=str(out)) as directory:
+        staging = Path(directory)
+        for role in roles:
+            images = []
+            for name in ROLES[role]:
+                image = f"clusterenergy/{name}:{arch}"
+                tar_path = (images_dir or staging) / f"{name}.tar"
+                if images_dir is None:
+                    build_image(name, image, platform, tar_path, builder, base_images or {})
+                verify_platform(tar_path, platform, image)
+                images.append(tar_path)
+            (staging / "platform.txt").write_text(platform + "\n", encoding="ascii")
+            (staging / "role.txt").write_text(role + "\n", encoding="ascii")
+            bundle_name = f"clusterenergy-{role}-{arch}.tar.gz"
+            bundle_path = staging / bundle_name
+            with tarfile.open(bundle_path, "w:gz") as tar:
+                scripts = [(ROOT / "scripts" / "deploy_offline.sh", "deploy.sh"),
+                           (ROOT / "README.md", "README.md"),
+                           (staging / "platform.txt", "platform.txt"),
+                           (staging / "role.txt", "role.txt")]
+                if role == "b":
+                    scripts.append((ROOT / "scripts" / "poll_slurm.py", "poll_slurm.py"))
+                for path, name in scripts + [(path, f"images/{path.name}") for path in images]:
+                    tar.add(path, arcname=name)
+            digest = sha256(bundle_path)
+            bundle_path.replace(out / bundle_name)
+            checksum = out / (bundle_name + ".sha256")
+            checksum.write_text(f"{digest}  {bundle_name}\n", encoding="ascii")
+            print(f"{bundle_name} sha256={digest}", flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--platform", choices=["linux/arm64", "linux/amd64"], default="linux/arm64")
+    parser.add_argument("--roles", nargs="+", choices=list(ROLES), default=list(ROLES))
+    parser.add_argument("--output", type=Path, default=ROOT / "dist")
+    parser.add_argument("--builder")
+    parser.add_argument("--python-base")
+    parser.add_argument("--nginx-base")
+    parser.add_argument("--images-dir", type=Path, help="package existing Docker image archives")
+    args = parser.parse_args()
+    if "b" in args.roles and args.images_dir is None and not (ROOT / "b_node/frontend/dist/index.html").is_file():
+        npm = "npm.cmd" if os.name == "nt" else "npm"
+        subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=ROOT / "b_node/frontend", check=True)
+        subprocess.run([npm, "run", "build"], cwd=ROOT / "b_node/frontend", check=True)
+    bases = {key: value for key, value in {"CE_PYTHON_BASE": args.python_base,
+                                          "CE_NGINX_BASE": args.nginx_base}.items() if value}
+    package(args.roles, args.platform, args.output.resolve(), args.builder, args.images_dir, bases)
     return 0
 
 

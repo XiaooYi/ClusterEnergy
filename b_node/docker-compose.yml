@@ -1,38 +1,38 @@
 services:
   b-gateway:
-    build:
-      context: ./gateway
-    container_name: cluster-energy-gateway
+    image: clusterenergy/gateway:${CE_ARCH:-arm64}
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - "${CE_CERTS_DIR:-./certs}:/certs:ro"
+      - b-data:/data
+    command:
+      - --bind
+      - "127.0.0.1"
+      - --port
+      - "${CE_GATEWAY_PORT:-18081}"
+      - --upstream
+      - "${CE_A_UPSTREAM:?Set the A HTTPS endpoint}"
+      - --mode
+      - "${CE_MODE:-real}"
+      - --db
+      - "/data/b-${CE_MODE:-real}.sqlite"
+      - --ca
+      - /certs/ca.crt
+      - --cert
+      - /certs/b_client.crt
+      - --key
+      - /certs/b_client.key
+  b-web:
+    image: clusterenergy/web:${CE_ARCH:-arm64}
+    pull_policy: never
     network_mode: host
     restart: unless-stopped
     environment:
-      - TZ=Asia/Shanghai
-    volumes:
-      - ./certs:/certs:ro
-      - ./data:/data
-    command:
-      - "--bind"
-      - "127.0.0.1"
-      - "--port"
-      - "18081"
-      - "--upstream"
-      - "https://127.0.0.1:19200"
-      - "--interval"
-      - "2.0"
-      - "--db"
-      - "/data/energy_history.db"
-      - "--ca"
-      - "/certs/ca.crt"
-      - "--cert"
-      - "/certs/b_client.crt"
-      - "--key"
-      - "/certs/b_client.key"
-
-  b-web:
-    build:
-      context: ./frontend
-    container_name: cluster-energy-web
-    network_mode: host
-    restart: unless-stopped
+      CE_GATEWAY_ADDR: "127.0.0.1:${CE_GATEWAY_PORT:-18081}"
+      CE_WEB_PORT: "${CE_WEB_PORT:-18088}"
     depends_on:
       - b-gateway
+volumes:
+  b-data:

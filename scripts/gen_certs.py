@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate offline CA and mTLS certificates for C1, C2, A, and B nodes."""
 
+import argparse
 import datetime
 import ipaddress
 import os
@@ -20,7 +21,8 @@ def gen_key():
 
 
 def save_key(key, path: str) -> None:
-    with open(path, "wb") as f:
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(descriptor, "wb") as f:
         f.write(
             key.private_bytes(
                 encoding=serialization.Encoding.PEM,
@@ -85,26 +87,55 @@ def sign_leaf(
     return key, cert
 
 
+def split_sans(hosts):
+    ips, names = [], []
+    for host in hosts:
+        try:
+            ips.append(str(ipaddress.ip_address(host)))
+        except ValueError:
+            names.append(host)
+    return ips, names
+
+
 def main() -> int:
-    os.makedirs(CERTS_DIR, exist_ok=True)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", default=CERTS_DIR)
+    parser.add_argument("--a-host", action="append", help="repeat for each A host name or IP")
+    parser.add_argument("--c-server", action="append", help="repeat name=host for each C endpoint")
+    args = parser.parse_args()
+    output = os.path.abspath(args.output)
+    if os.path.exists(os.path.join(output, "ca.key")):
+        parser.error("choose a new output directory to avoid replacing an existing CA")
+    a_hosts = args.a_host or ["127.0.0.1", "localhost"]
+    c_hosts = args.c_server or []
+    c_specs = {}
+    for value in c_hosts:
+        name, separator, host = value.partition("=")
+        if not separator or not name or not host or not name.replace("_", "").replace("-", "").isalnum():
+            parser.error("--c-server must be name=host, with a simple certificate name")
+        if name in {"ca", "a_server", "a_client", "b_client"}:
+            parser.error(f"reserved certificate name: {name}")
+        c_specs.setdefault(name, []).append(host)
+
+    os.makedirs(output, mode=0o700, exist_ok=True)
     ca_key, ca_cert = create_ca()
-    save_key(ca_key, os.path.join(CERTS_DIR, "ca.key"))
-    save_cert(ca_cert, os.path.join(CERTS_DIR, "ca.crt"))
+    save_key(ca_key, os.path.join(output, "ca.key"))
+    save_cert(ca_cert, os.path.join(output, "ca.crt"))
 
     specs = [
-        ("ln2", ExtendedKeyUsageOID.SERVER_AUTH, ["25.8.100.22"], ["ln2"]),
-        ("ln4", ExtendedKeyUsageOID.SERVER_AUTH, ["25.8.100.24"], ["ln4"]),
         ("a_client", ExtendedKeyUsageOID.CLIENT_AUTH, None, ["a-client"]),
-        ("a_server", ExtendedKeyUsageOID.SERVER_AUTH, ["127.0.0.1", "25.8.100.23"], ["ln3", "localhost"]),
+        ("a_server", ExtendedKeyUsageOID.SERVER_AUTH, *split_sans(a_hosts)),
         ("b_client", ExtendedKeyUsageOID.CLIENT_AUTH, None, ["b-client"]),
     ]
+    specs.extend((name, ExtendedKeyUsageOID.SERVER_AUTH, *split_sans(hosts))
+                 for name, hosts in c_specs.items())
 
     for name, eku, ips, dns in specs:
         k, c = sign_leaf(ca_key, ca_cert, name, eku, ips, dns)
-        save_key(k, os.path.join(CERTS_DIR, f"{name}.key"))
-        save_cert(c, os.path.join(CERTS_DIR, f"{name}.crt"))
+        save_key(k, os.path.join(output, f"{name}.key"))
+        save_cert(c, os.path.join(output, f"{name}.crt"))
 
-    print(f"Generated offline CA and {len(specs)} certificates in {CERTS_DIR}")
+    print(f"Generated offline CA and {len(specs)} certificates in {output}")
     return 0
 
 

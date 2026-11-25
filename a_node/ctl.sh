@@ -1,103 +1,39 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-RUNTIME_DIR="${BASE_DIR}/runtime/ln3"
-CERTS_DIR="${BASE_DIR}/certs"
-SSH_KEY="${RUNTIME_DIR}/id_ed25519_b"
-
-mkdir -p "${RUNTIME_DIR}"
-
-AGG_PID="${RUNTIME_DIR}/aggregator.pid"
-TUN_PID="${RUNTIME_DIR}/tunnel.pid"
-
-is_running() {
-  local pid_file="$1"
-  if [[ -f "${pid_file}" ]]; then
-    local pid
-    pid="$(cat "${pid_file}")"
-    if [[ -n "${pid}" ]] && kill -0 "${pid}" 2>/dev/null; then
-      return 0
-    fi
-  fi
-  return 1
-}
-
-start_proc() {
-  local name="$1"
-  local pid_file="$2"
-  local log_file="$3"
-  shift 3
-  if is_running "${pid_file}"; then
-    echo "${name} already running (pid $(cat "${pid_file}"))"
-    return 0
-  fi
-  nohup "$@" >> "${log_file}" 2>&1 < /dev/null &
-  echo $! > "${pid_file}"
-  echo "started ${name} (pid $!)"
-}
-
-stop_proc() {
-  local name="$1"
-  local pid_file="$2"
-  if is_running "${pid_file}"; then
-    local pid
-    pid="$(cat "${pid_file}")"
-    kill "${pid}" 2>/dev/null || true
-    sleep 0.5
-    kill -9 "${pid}" 2>/dev/null || true
-    rm -f "${pid_file}"
-    echo "stopped ${name} (pid ${pid})"
-  else
-    rm -f "${pid_file}"
-    echo "${name} not running"
-  fi
-}
-
+root=$(cd -- "$(dirname -- "$0")/.." && pwd)
+certs="${CE_CERTS_DIR:-$root/certs}"
+data="${CE_DATA_DIR:-$root/runtime}"
+mode="${CE_MODE:-real}"
+mkdir -p "$data"
+pid="$data/aggregator-$mode.pid"
 case "${1:-status}" in
-  start)
-    start_proc "aggregator" "${AGG_PID}" "${RUNTIME_DIR}/aggregator.log" \
-      python3 "${BASE_DIR}/a_node/aggregator.py" \
-      --bind 127.0.0.1 --port 19200 \
-      --target ln2=25.8.100.22:19100 \
-      --target ln4=25.8.100.24:19100 \
-      --interval 2.0 \
-      --ca "${CERTS_DIR}/ca.crt" \
-      --client-cert "${CERTS_DIR}/a_client.crt" \
-      --client-key "${CERTS_DIR}/a_client.key" \
-      --server-cert "${CERTS_DIR}/a_server.crt" \
-      --server-key "${CERTS_DIR}/a_server.key" \
-      --sim-nodes 8
-    if [[ -f "${SSH_KEY}" ]]; then
-      chmod 600 "${SSH_KEY}"
-      start_proc "tunnel" "${TUN_PID}" "${RUNTIME_DIR}/tunnel.log" \
-        python3 "${BASE_DIR}/a_node/tunnel.py" \
-        --remote-user user --remote-host 192.168.251.226 \
-        --remote-port 19200 --local-port 19200 --ssh-key "${SSH_KEY}"
-    else
-      echo "tunnel skipped: ${SSH_KEY} not found"
-    fi
-    ;;
-  stop)
-    stop_proc "tunnel" "${TUN_PID}"
-    stop_proc "aggregator" "${AGG_PID}"
-    ;;
-  restart)
-    "$0" stop
-    "$0" start
-    ;;
-  status)
-    for pair in "aggregator:${AGG_PID}" "tunnel:${TUN_PID}"; do
-      n="${pair%%:*}"; p="${pair##*:}"
-      if is_running "${p}"; then
-        echo "ln3 ${n}: RUNNING (pid $(cat "${p}"))"
-      else
-        echo "ln3 ${n}: STOPPED"
-      fi
-    done
-    ;;
-  *)
-    echo "Usage: $0 {start|stop|restart|status}"
-    exit 1
-    ;;
+    start)
+        if [[ -f "$pid" ]] && kill -0 "$(<"$pid")" 2>/dev/null; then exit 0; fi
+        args=(--bind "${CE_BIND:-127.0.0.1}" --port "${CE_A_PORT:-19200}" --interval "${CE_INTERVAL:-5}"
+              --db "$data/a-$mode.sqlite" --retention-days "${CE_A_RETENTION_DAYS:-15}"
+              --ca "$certs/ca.crt" --server-cert "$certs/a_server.crt" --server-key "$certs/a_server.key")
+        if [[ "$mode" == simulated ]]; then
+            args+=(--sim-nodes "${CE_SIM_NODES:-8}")
+        elif [[ "$mode" == real ]]; then
+            IFS=, read -r -a targets <<< "${CE_C_TARGETS:?Set CE_C_TARGETS to name=https://host:port}"
+            args+=(--client-cert "$certs/a_client.crt" --client-key "$certs/a_client.key")
+            for target in "${targets[@]}"; do args+=(--target "$target"); done
+        else
+            echo "CE_MODE must be real or simulated" >&2
+            exit 2
+        fi
+        if [[ -n "${CE_RACKS:-}" ]]; then args+=(--racks "$CE_RACKS"); fi
+        nohup python3 "$root/a_node/aggregator.py" "${args[@]}" > "$data/aggregator-$mode.log" 2>&1 &
+        echo "$!" > "$pid" ;;
+    stop)
+        if [[ -f "$pid" ]]; then kill "$(<"$pid")" 2>/dev/null || true; rm -f -- "$pid"; fi ;;
+    restart) bash "$0" stop; bash "$0" start ;;
+    status)
+        if [[ -f "$pid" ]] && kill -0 "$(<"$pid")" 2>/dev/null; then
+            echo "running ($(<"$pid"))"
+        else
+            echo "stopped"
+            exit 1
+        fi ;;
+    *) echo "Usage: bash $0 {start|stop|restart|status}" >&2; exit 2 ;;
 esac

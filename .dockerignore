@@ -1,0 +1,15 @@
+**
+!Dockerfile
+!common/
+!common/*.py
+!a_node/
+!a_node/*.py
+!c_node/
+!c_node/*.py
+!b_node/
+!b_node/gateway/
+!b_node/gateway/*.py
+!b_node/frontend/
+!b_node/frontend/nginx.conf.template
+!b_node/frontend/dist/
+!b_node/frontend/dist/**
