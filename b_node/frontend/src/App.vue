@@ -3,7 +3,7 @@
     <header class="topbar">
       <div class="title-group">
         <h1>超算集群能耗实时监控大屏</h1>
-        <div class="subtitle">集群节点实时功耗与能效运行监测</div>
+        <div class="subtitle">集群节点实时功耗监测</div>
       </div>
       <div class="status-bar">
         <div class="badge">
@@ -14,17 +14,14 @@
           <span>在线节点: {{ cluster.online_nodes ?? 0 }} / {{ cluster.total_nodes ?? 0 }}</span>
         </div>
         <div class="badge">
-          <span>今日累计: {{ fmtKwh(cluster.today_kwh) }} kWh</span>
-        </div>
-        <div class="badge">
-          <span>最新采样: {{ formatClock(snapshot.updated_at) }}</span>
+          <span>最新采样: {{ formatBeijingClock(snapshot.sampled_at ?? snapshot.updated_at) }}</span>
         </div>
         <button class="badge log-btn" @click="openLogsModal">
           <span class="dot" :class="abnormalCount > 0 ? 'err' : 'ok'"></span>
           <span>{{ (cluster.today_alerts ?? 0) > 0 ? `运行日志 (${cluster.today_alerts})` : "运行日志 · 正常" }}</span>
         </button>
         <button class="btn" :class="{ active: autoRefresh }" @click="autoRefresh = !autoRefresh">
-          {{ autoRefresh ? "自动刷新: 开 (2s)" : "自动刷新: 暂停" }}
+          {{ autoRefresh ? `自动刷新: 开 (${REFRESH_SECONDS}s)` : "自动刷新: 暂停" }}
         </button>
       </div>
     </header>
@@ -35,57 +32,78 @@
         <div class="kpi-val">{{ fmt(cluster.total_power) }}<span class="kpi-unit">W</span></div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">集群能效比</div>
-        <div class="kpi-val">{{ fmtPct(cluster.efficiency_ratio) }}<span class="kpi-unit">%</span></div>
+        <div class="kpi-label">今日已用电量</div>
+        <div class="kpi-val">{{ cluster.today_kwh == null ? "—" : fmtKwh(cluster.today_kwh) }}<span class="kpi-unit">kWh</span></div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">计算核心功耗 (CORE)</div>
-        <div class="kpi-val">{{ fmt(cluster.core_power) }}<span class="kpi-unit">W</span></div>
+        <div class="kpi-label">近 7 天用电量</div>
+        <div class="kpi-val">{{ cluster.energy_7d_days ? fmtKwh(cluster.energy_7d_kwh) : "—" }}<span class="kpi-unit">kWh</span></div>
+        <div class="kpi-note" v-if="cluster.energy_7d_days">有采样 {{ cluster.energy_7d_days }} / 7 天</div>
       </div>
       <div class="kpi-card">
-        <div class="kpi-label">内存接口功耗 (DDQ)</div>
-        <div class="kpi-val">{{ fmt(cluster.ddq_power) }}<span class="kpi-unit">W</span></div>
+        <div class="kpi-label">近 5 分钟功耗峰值</div>
+        <div class="kpi-val">{{ recentPeak ? fmtKw(recentPeak.cluster_total) : "—" }}<span class="kpi-unit">kW</span></div>
+        <div class="kpi-note" v-if="recentPeak">{{ formatBeijingClock(recentPeak.ts) }} 北京时间</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label">网络互连功耗 (NI)</div>
-        <div class="kpi-val">{{ fmt(cluster.ni_out_power) }}<span class="kpi-unit">W</span></div>
+      <div class="kpi-card" v-if="topRack">
+        <div class="kpi-label">当前功耗最高机柜</div>
+        <div class="kpi-val">{{ fmtKw(topRack.watts) }}<span class="kpi-unit">kW</span></div>
+        <div class="kpi-note">{{ topRack.rack_id }} · {{ topRack.online_nodes }} 个节点</div>
       </div>
-      <div class="kpi-card">
-        <div class="kpi-label">高带宽存储功耗 (HVM)</div>
-        <div class="kpi-val">{{ fmt(cluster.hvm_out_power) }}<span class="kpi-unit">W</span></div>
+      <div class="kpi-card" v-else>
+        <div class="kpi-label">采样过期节点</div>
+        <div class="kpi-val" :class="{ 'kpi-warn': gatewayOk && staleCount > 0 }">{{ gatewayOk ? staleCount : "—" }}<span class="kpi-unit">个</span></div>
       </div>
     </section>
 
-    <section class="panel" style="margin-bottom: 12px">
+    <section ref="overviewEl" class="panel" style="margin-bottom: 12px">
       <div class="panel-header" style="flex-wrap: wrap; gap: 8px">
         <div class="panel-title">
-          节点运行总览（共 {{ filteredNodes.length }} 个节点 · 当前选中: {{ selectedNodeId || "--" }}）
+          {{ overviewByRack ? `机柜运行总览（${filteredRacks.length} 组）` : `节点运行总览（共 ${filteredNodes.length} 个节点 · 当前选中: ${selectedNodeId || "--"}）` }}
         </div>
         <div class="toolbar">
+          <div class="toolbar" role="group" aria-label="运行总览维度">
+            <button type="button" class="btn" :class="{ active: overviewByRack }" :aria-pressed="overviewByRack" @click="switchOverview(true)">按机柜</button>
+            <button type="button" class="btn" :class="{ active: !overviewByRack }" :aria-pressed="!overviewByRack" @click="switchOverview(false)">按节点</button>
+          </div>
+          <button v-if="!overviewByRack && selectedRackId !== undefined" type="button" class="btn active"
+            aria-label="清除机柜筛选" @click="switchOverview(false)">{{ rackLabel(selectedRackId) }} ×</button>
           <input
             v-model.trim="searchQuery"
             class="search-input"
             type="text"
-            placeholder="搜索节点名..."
+            :placeholder="overviewByRack ? '搜索机柜编号...' : '搜索节点名...'"
           />
           <button
             class="btn"
             :class="{ active: onlyAbnormal }"
             @click="onlyAbnormal = !onlyAbnormal"
           >
-            仅看异常 ({{ abnormalCount }})
+            仅看异常 ({{ overviewAbnormalCount }})
           </button>
           <button class="btn" :disabled="currentPage <= 1" @click="currentPage--">上一页</button>
           <span class="page-info">{{ currentPage }} / {{ totalPages }} 页</span>
           <button class="btn" :disabled="currentPage >= totalPages" @click="currentPage++">下一页</button>
         </div>
       </div>
-      <div v-if="pagedNodes.length === 0" class="subtitle" style="padding: 18px 0; text-align: center">
-        暂无匹配的节点数据
+      <div v-if="pagedOverview.length === 0" class="subtitle" style="padding: 18px 0; text-align: center">
+        {{ overviewByRack ? "暂无匹配的机柜数据" : "暂无匹配的节点数据" }}
+      </div>
+      <div v-else-if="overviewByRack" class="nodes-matrix">
+        <button v-for="rack in pagedOverview" :key="rack.id ?? ''" type="button"
+          class="node-tile rack-tile" @click="openRack(rack.id)">
+          <span class="tile-top">
+            <span class="tile-name">{{ rackLabel(rack.id) }}</span>
+            <span class="tile-status"><span class="dot" :class="!gatewayOk ? 'err' : rack.online === rack.total ? 'ok' : 'warn'"></span>
+              {{ !gatewayOk ? "连接中断" : rack.online === rack.total ? "采样正常" : "有异常" }}</span>
+          </span>
+          <span class="tile-power">{{ gatewayOk && rack.watts != null ? fmtKw(rack.watts) : "—" }} <span class="kpi-unit">kW</span></span>
+          <span class="tile-sub">有效采样 {{ gatewayOk ? rack.online : "—" }} / {{ rack.total }} 节点</span>
+        </button>
       </div>
       <div v-else class="nodes-matrix">
         <div
-          v-for="node in pagedNodes"
+          v-for="node in pagedOverview"
           :key="node.node_id"
           class="node-tile"
           :class="{ selected: selectedNodeId === node.node_id, offline: node.status === 'offline' }"
@@ -100,7 +118,6 @@
           </div>
           <div class="tile-power">{{ fmt(node.summary?.total_power) }} <span class="kpi-unit">W</span></div>
           <div class="tile-sub">
-            <span>能效比 {{ fmtPct(node.summary?.efficiency_ratio) }}%</span>
             <span>占比 {{ sharePct(node.summary?.total_power) }}%</span>
           </div>
           <div class="share-bar">
@@ -116,8 +133,14 @@
           <div>
             <div class="panel-title">{{ leftTitle }}</div>
             <div v-if="statsSubtitle" class="subtitle">{{ statsSubtitle }}</div>
+             <div v-if="leftMode === 'rank' && rankedRows.length === 0" class="subtitle">暂无有效的实时功耗数据</div>
+             <div v-else-if="leftMode === 'rank' && rankByRack" class="subtitle">点击机柜查看所属节点</div>
           </div>
           <div class="toolbar">
+            <div v-if="leftMode === 'rank'" class="toolbar" role="group" aria-label="功耗排行维度">
+              <button type="button" class="btn" :class="{ active: rankByRack }" :aria-pressed="rankByRack" @click="rankByRack = true">按机柜</button>
+              <button type="button" class="btn" :class="{ active: !rankByRack }" :aria-pressed="!rankByRack" @click="rankByRack = false">按节点</button>
+            </div>
             <button
               v-for="m in leftModes"
               :key="m.id"
@@ -130,22 +153,6 @@
           </div>
         </div>
         <div ref="leftEl" class="chart-tall"></div>
-      </div>
-
-      <div class="right-stack">
-        <div class="panel">
-          <div class="panel-header">
-            <div class="panel-title">计算核心与内存通道功耗 (N0 ~ N7 · {{ selectedNodeId || "--" }})</div>
-          </div>
-          <div ref="domain1El" class="chart-half"></div>
-        </div>
-
-        <div class="panel">
-          <div class="panel-header">
-            <div class="panel-title">互连与存储输出通道功耗 (NI / HVM · {{ selectedNodeId || "--" }})</div>
-          </div>
-          <div ref="domain2El" class="chart-half"></div>
-        </div>
       </div>
     </section>
 
@@ -175,7 +182,7 @@
             <div class="toolbar">
               <select v-model="logNodeFilter" class="select-input" @change="onLogFilterChange">
                 <option value="all">全部节点</option>
-                <option v-for="n in sortedNodes" :key="n.node_id" :value="n.node_id">{{ n.node_id }}</option>
+                <option v-for="nodeId in logNodeOptions" :key="nodeId" :value="nodeId">{{ nodeId }}</option>
               </select>
               <select v-model="logLevelFilter" class="select-input" @change="onLogFilterChange">
                 <option value="all">全部级别</option>
@@ -187,7 +194,7 @@
           </div>
 
           <div v-if="alertsPage.items.length === 0" class="subtitle" style="padding: 64px 0; text-align: center; font-size: 14px">
-            暂无符合条件的运行事件，集群运行平稳。
+            暂无符合条件的运行事件。
           </div>
           <table v-else class="log-table">
             <thead>
@@ -228,11 +235,15 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import * as echarts from "echarts";
+import { beijingDate, dayPowerSeries, formatBeijingClock } from "./dashboardTime.js";
+import { powerSeries } from "./powerSeries.js";
 
 const PAGE_SIZE = 10;
+const REFRESH_SECONDS = 5;
+const REFRESH_MS = REFRESH_SECONDS * 1000;
 const leftModes = [
   { id: "trend", label: "实时趋势" },
-  { id: "rank", label: "节点排行" },
+  { id: "rank", label: "功耗排行" },
   { id: "today", label: "当天" },
   { id: "7d", label: "近 7 天" },
   { id: "30d", label: "近 30 天" },
@@ -240,10 +251,14 @@ const leftModes = [
 
 const snapshot = ref({ cluster: {}, nodes: [], alerts: [], gateway: {} });
 const history = ref({ points: [] });
+const nodeHistory = ref({ node_id: "", samples: [] });
 const statsData = ref({ range: "today", total_kwh: 0, avg_power: 0, peak_power: 0, points: [], days: [] });
 const autoRefresh = ref(true);
 const selectedNodeId = ref("");
 const leftMode = ref("trend");
+const overviewByRack = ref(false);
+const rankByRack = ref(true);
+const selectedRackId = ref(undefined);
 const searchQuery = ref("");
 const onlyAbnormal = ref(false);
 const currentPage = ref(1);
@@ -258,21 +273,31 @@ const logNodeFilter = ref("all");
 const logLevelFilter = ref("all");
 const logPage = ref(1);
 const alertsPage = ref({ total: 0, page: 1, page_size: 12, total_pages: 1, items: [] });
+const logNodeOptions = computed(() => {
+  const ids = new Set([...(alertsPage.value.nodes ?? []), ...nodes.value.map((node) => node.node_id)]);
+  if (logNodeFilter.value !== "all") ids.add(logNodeFilter.value);
+  return [...ids].sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+});
 
 const leftEl = ref(null);
-const domain1El = ref(null);
-const domain2El = ref(null);
+const overviewEl = ref(null);
 
 let leftChart = null;
-let domain1Chart = null;
-let domain2Chart = null;
 let timer = null;
 let statsTick = 0;
+let nodeHistoryRequest = null;
 
 const cluster = computed(() => snapshot.value.cluster || {});
 const nodes = computed(() => snapshot.value.nodes || []);
 const alerts = computed(() => snapshot.value.alerts || []);
 const gatewayOk = computed(() => Boolean(snapshot.value.gateway?.upstream_ok));
+const topRack = computed(() => gatewayOk.value && cluster.value.online_nodes > 0 &&
+  cluster.value.mapped_online_nodes === cluster.value.online_nodes ? snapshot.value.racks?.[0] : null);
+const recentPeak = computed(() => (history.value.points ?? []).reduce((peak, point) => {
+  if (!Number.isFinite(point.cluster_total)) return peak;
+  return !peak || point.cluster_total >= peak.cluster_total ? point : peak;
+}, null));
+const staleCount = computed(() => nodes.value.filter((node) => node.status === "stale").length);
 
 const abnormalCount = computed(() => nodes.value.filter((n) => n.status !== "online").length);
 
@@ -286,29 +311,93 @@ const sortedNodes = computed(() => {
   });
 });
 
+function rackLabel(id) {
+  return id ?? "未映射节点";
+}
+
+const rackGroups = computed(() => {
+  const wattsByRack = new Map((snapshot.value.racks ?? []).map((rack) => [rack.rack_id, rack.watts]));
+  const groups = new Map();
+  for (const node of nodes.value) {
+    const id = node.rack_id || null;
+    if (!groups.has(id)) groups.set(id, { id, watts: null, online: 0, total: 0 });
+    const group = groups.get(id);
+    group.total++;
+    const watts = node.summary?.total_power;
+    if (node.status === "online" && Number.isFinite(watts)) {
+      group.online++;
+      group.watts = (group.watts ?? 0) + watts;
+    }
+  }
+  return [...groups.values()]
+    .map((group) => ({ ...group, watts: wattsByRack.get(group.id) ?? group.watts }))
+    .sort((a, b) => a.id === null ? 1 : b.id === null ? -1 : a.id.localeCompare(b.id, undefined, { numeric: true }));
+});
+
+const scopedNodes = computed(() => selectedRackId.value === undefined ? sortedNodes.value :
+  sortedNodes.value.filter((node) => (node.rack_id || null) === selectedRackId.value));
+
+const overviewAbnormalCount = computed(() => overviewByRack.value
+  ? rackGroups.value.filter((rack) => rack.online < rack.total).length
+  : scopedNodes.value.filter((node) => node.status !== "online").length);
+
+const filteredRacks = computed(() => {
+  const query = searchQuery.value.toLowerCase();
+  return rackGroups.value.filter((rack) => (!onlyAbnormal.value || rack.online < rack.total) &&
+    rackLabel(rack.id).toLowerCase().includes(query));
+});
+
 const filteredNodes = computed(() => {
   const q = searchQuery.value.toLowerCase();
-  return sortedNodes.value.filter((n) => {
+  return scopedNodes.value.filter((n) => {
     if (onlyAbnormal.value && n.status === "online") return false;
     if (q && !String(n.node_id).toLowerCase().includes(q)) return false;
     return true;
   });
 });
 
-const totalPages = computed(() => Math.max(1, Math.ceil(filteredNodes.value.length / PAGE_SIZE)));
+const overviewRows = computed(() => overviewByRack.value ? filteredRacks.value : filteredNodes.value);
+const totalPages = computed(() => Math.max(1, Math.ceil(overviewRows.value.length / PAGE_SIZE)));
 
-const pagedNodes = computed(() => {
+const pagedOverview = computed(() => {
   const start = (currentPage.value - 1) * PAGE_SIZE;
-  return filteredNodes.value.slice(start, start + PAGE_SIZE);
+  return overviewRows.value.slice(start, start + PAGE_SIZE);
 });
 
-const activeNode = computed(() => {
-  return nodes.value.find((n) => n.node_id === selectedNodeId.value) || nodes.value[0] || { metrics: {} };
+const rankedRows = computed(() => {
+  if (!gatewayOk.value) return [];
+  const rows = rankByRack.value ? rackGroups.value
+    .filter((rack) => rack.id !== null && Number.isFinite(rack.watts))
+    .map((rack) => ({ ...rack, name: rack.id, value: rack.watts / 1000 }))
+    : scopedNodes.value.filter((node) => node.status === "online" && Number.isFinite(node.summary?.total_power))
+      .map((node) => ({ name: node.node_id, value: node.summary.total_power }));
+  return rows.sort((a, b) => b.value - a.value || a.name.localeCompare(b.name, undefined, { numeric: true })).slice(0, 10);
 });
+
+function switchOverview(byRack) {
+  overviewByRack.value = byRack;
+  selectedRackId.value = undefined;
+  searchQuery.value = "";
+  currentPage.value = 1;
+}
+
+function openRack(id) {
+  overviewByRack.value = false;
+  selectedRackId.value = id;
+  searchQuery.value = "";
+  onlyAbnormal.value = false;
+  currentPage.value = 1;
+  if (!scopedNodes.value.some((node) => node.node_id === selectedNodeId.value)) {
+    selectedNodeId.value = scopedNodes.value[0]?.node_id ?? "";
+  }
+}
 
 const leftTitle = computed(() => {
   if (leftMode.value === "trend") return `实时功耗趋势（集群 & ${selectedNodeId.value || "--"}）`;
-  if (leftMode.value === "rank") return "各节点实时功耗排行";
+  if (leftMode.value === "rank") {
+    if (rankByRack.value) return "机柜实时功耗排行（前 10）";
+    return selectedRackId.value === undefined ? "节点实时功耗排行（前 10）" : `${rackLabel(selectedRackId.value)} · 节点实时功耗排行（前 10）`;
+  }
   if (leftMode.value === "today") return "当天集群功耗走势（分钟级）";
   if (leftMode.value === "7d") return "近 7 天集群每日用电与功率";
   return "近 30 天集群每日用电与功率";
@@ -328,10 +417,6 @@ function fmtKwh(val) {
   return Number(val || 0).toFixed(3);
 }
 
-function fmtPct(val) {
-  return (Number(val || 0) * 100).toFixed(1);
-}
-
 function sharePct(power) {
   const total = Number(cluster.value.total_power || 0);
   if (total <= 0) return "0.0";
@@ -344,9 +429,15 @@ function shareBarWidth(power) {
   return `${Math.min(100, (Number(power || 0) / maxPower) * 100).toFixed(1)}%`;
 }
 
-function formatClock(iso) {
-  if (!iso) return "--:--:--";
-  return iso.replace("T", " ").slice(11, 19);
+function fmtKw(watts) {
+  return (watts / 1000).toFixed(2);
+}
+
+function formatPowerTooltip(points) {
+  if (!points.length) return "";
+  const rows = points.filter((point) => Number.isFinite(point.value[1]))
+    .map((point) => `${point.seriesName}  ${fmt(point.value[1])} W`);
+  return [formatBeijingClock(points[0].axisValue), ...rows].join("\n");
 }
 
 function formatDateTime(iso) {
@@ -376,15 +467,16 @@ function renderLeftChart() {
   if (!leftChart) return;
   if (leftMode.value === "trend") {
     const pts = history.value.points || [];
-    const times = pts.map((p) => formatClock(p.ts));
     const sel = selectedNodeId.value;
+    const samples = nodeHistory.value.node_id === sel ? nodeHistory.value.samples : [];
     leftChart.setOption(
       {
         backgroundColor: "transparent",
-        tooltip: { trigger: "axis" },
+        tooltip: { trigger: "axis", renderMode: "richText", formatter: formatPowerTooltip },
         legend: { data: ["集群总功耗", sel || "选中节点"], textStyle: { color: "#cbd5e1" } },
         grid: { left: 54, right: 54, top: 38, bottom: 28 },
-        xAxis: { type: "category", data: times, axisLabel: { color: "#94a3b8" } },
+        useUTC: true,
+        xAxis: { type: "time", axisLabel: { color: "#94a3b8", formatter: formatBeijingClock } },
         yAxis: [
           { type: "value", name: "集群 (W)", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
           { type: "value", name: "单节点 (W)", axisLabel: { color: "#94a3b8" }, splitLine: { show: false } },
@@ -397,7 +489,8 @@ function renderLeftChart() {
             showSymbol: false,
             yAxisIndex: 0,
             lineStyle: { width: 2.5, color: "#38bdf8" },
-            data: pts.map((p) => p.cluster_total ?? 0),
+            connectNulls: false,
+            data: powerSeries(pts, "ts", "cluster_total", REFRESH_MS),
           },
           {
             name: sel || "选中节点",
@@ -406,29 +499,34 @@ function renderLeftChart() {
             showSymbol: false,
             yAxisIndex: 1,
             lineStyle: { width: 2, color: "#22c55e" },
-            data: pts.map((p) => p.nodes?.[sel] ?? 0),
+            connectNulls: false,
+            data: powerSeries(samples, "collected_at", "watts", REFRESH_MS),
           },
         ],
       },
       true
     );
   } else if (leftMode.value === "rank") {
-    const sorted = [...nodes.value].sort((a, b) => (a.summary?.total_power ?? 0) - (b.summary?.total_power ?? 0));
+    const byRack = rankByRack.value;
+    const rows = rankedRows.value;
     leftChart.setOption(
       {
         backgroundColor: "transparent",
-        tooltip: { trigger: "axis", axisPointer: { type: "shadow" } },
-        grid: { left: 64, right: 26, top: 20, bottom: 26 },
-        xAxis: { type: "value", name: "W", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
-        yAxis: { type: "category", data: sorted.map((n) => n.node_id), axisLabel: { color: "#e2e8f0" } },
+        tooltip: byRack ? {
+          trigger: "item", renderMode: "richText",
+          formatter: ({ data }) => `${data.name}\n实时总功耗 ${data.value.toFixed(2)} kW\n有效采样 ${data.online} / ${data.total} 节点`,
+        } : { trigger: "axis", axisPointer: { type: "shadow" } },
+        grid: { left: 20, right: 26, top: 20, bottom: 26, containLabel: true },
+        xAxis: { type: "value", name: byRack ? "kW" : "W", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
+        yAxis: { type: "category", inverse: true, data: rows.map((row) => row.name), axisLabel: { color: "#e2e8f0" } },
         series: [
           {
-            name: "节点总功耗",
+            name: byRack ? "机柜总功耗" : "节点总功耗",
             type: "bar",
             barMaxWidth: 20,
-            data: sorted.map((n) => ({
-              value: n.summary?.total_power ?? 0,
-              itemStyle: { color: n.node_id === selectedNodeId.value ? "#38bdf8" : "#0284c7" },
+            data: rows.map((row) => ({
+              ...row,
+              itemStyle: { color: row.name === (byRack ? selectedRackId.value : selectedNodeId.value) ? "#38bdf8" : "#0284c7" },
             })),
           },
         ],
@@ -437,17 +535,23 @@ function renderLeftChart() {
     );
   } else if (leftMode.value === "today") {
     const pts = statsData.value.points || [];
+    const day = dayPowerSeries(statsData.value.date ?? beijingDate(Date.now()), pts);
     leftChart.setOption(
       {
         backgroundColor: "transparent",
-        tooltip: { trigger: "axis" },
+        tooltip: { trigger: "axis", renderMode: "richText", formatter: formatPowerTooltip },
         legend: { data: ["分钟平均功耗", "分钟峰值功耗"], textStyle: { color: "#cbd5e1" } },
         grid: { left: 54, right: 20, top: 38, bottom: 28 },
-        xAxis: { type: "category", data: pts.map((p) => p.ts.slice(11, 16)), axisLabel: { color: "#94a3b8" } },
+        useUTC: true,
+        xAxis: {
+          type: "time", min: day.start, max: day.end, splitNumber: 8,
+          axisLabel: { color: "#94a3b8", showMinLabel: true, showMaxLabel: true,
+            formatter: (time) => time === day.end ? "24:00" : formatBeijingClock(time).slice(0, 5) },
+        },
         yAxis: { type: "value", name: "W", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
         series: [
-          { name: "分钟平均功耗", type: "line", smooth: true, showSymbol: false, data: pts.map((p) => p.avg_power), itemStyle: { color: "#38bdf8" } },
-          { name: "分钟峰值功耗", type: "line", smooth: true, showSymbol: false, data: pts.map((p) => p.max_power), itemStyle: { color: "#f59e0b" } },
+          { name: "分钟平均功耗", type: "line", smooth: true, showSymbol: false, connectNulls: false, data: day.average, itemStyle: { color: "#38bdf8" } },
+          { name: "分钟峰值功耗", type: "line", smooth: true, showSymbol: false, connectNulls: false, data: day.peak, itemStyle: { color: "#f59e0b" } },
         ],
       },
       true
@@ -473,46 +577,6 @@ function renderLeftChart() {
       true
     );
   }
-}
-
-function renderRightCharts() {
-  const m = activeNode.value.metrics || {};
-  if (domain1Chart) {
-    const labels = Array.from({ length: 8 }, (_, i) => `N${i}`);
-    domain1Chart.setOption({
-      backgroundColor: "transparent",
-      tooltip: { trigger: "axis" },
-      legend: { data: ["CORE", "DDQ"], textStyle: { color: "#cbd5e1" } },
-      grid: { left: 42, right: 16, top: 32, bottom: 24 },
-      xAxis: { type: "category", data: labels, axisLabel: { color: "#94a3b8" } },
-      yAxis: { type: "value", name: "W", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
-      series: [
-        { name: "CORE", type: "bar", data: labels.map((l) => m[`${l}_CORE`] ?? 0), itemStyle: { color: "#38bdf8" } },
-        { name: "DDQ", type: "bar", data: labels.map((l) => m[`${l}_DDQ`] ?? 0), itemStyle: { color: "#a855f7" } },
-      ],
-    });
-  }
-
-  if (domain2Chart) {
-    const labels = Array.from({ length: 6 }, (_, i) => `#${i}`);
-    domain2Chart.setOption({
-      backgroundColor: "transparent",
-      tooltip: { trigger: "axis" },
-      legend: { data: ["NI", "HVM"], textStyle: { color: "#cbd5e1" } },
-      grid: { left: 42, right: 16, top: 32, bottom: 24 },
-      xAxis: { type: "category", data: labels, axisLabel: { color: "#94a3b8" } },
-      yAxis: { type: "value", name: "W", axisLabel: { color: "#94a3b8" }, splitLine: { lineStyle: { color: "#1e293b" } } },
-      series: [
-        { name: "NI", type: "bar", data: Array.from({ length: 6 }, (_, i) => m[`NI${i}_OUT`] ?? 0), itemStyle: { color: "#22c55e" } },
-        { name: "HVM", type: "bar", data: Array.from({ length: 6 }, (_, i) => m[`HVM${i}_OUT`] ?? 0), itemStyle: { color: "#f59e0b" } },
-      ],
-    });
-  }
-}
-
-function renderAll() {
-  renderLeftChart();
-  renderRightCharts();
 }
 
 async function fetchAlerts() {
@@ -570,6 +634,33 @@ function switchLeftMode(mode) {
     fetchStats(mode);
   } else {
     renderLeftChart();
+    if (mode === "trend") fetchNodeHistory();
+  }
+}
+
+async function fetchNodeHistory() {
+  const node = selectedNodeId.value;
+  const points = history.value.points ?? [];
+  if (leftMode.value !== "trend" || !node || !points.length) return;
+
+  const query = new URLSearchParams({ node, from: points[0].ts, to: points[points.length - 1].ts });
+  const path = `/api/node-history?${query}`;
+  if (nodeHistoryRequest?.path === path) return;
+  nodeHistoryRequest?.controller.abort();
+  const controller = new AbortController();
+  nodeHistoryRequest = { path, controller };
+  try {
+    const response = await fetch(path, { signal: controller.signal });
+    if (!response.ok) return;
+    const result = await response.json();
+    if (nodeHistoryRequest?.controller === controller && selectedNodeId.value === node) {
+      nodeHistory.value = result;
+      if (leftMode.value === "trend") renderLeftChart();
+    }
+  } catch (_e) {
+    // Keep this node's last history when a request is interrupted.
+  } finally {
+    if (nodeHistoryRequest?.controller === controller) nodeHistoryRequest = null;
   }
 }
 
@@ -585,7 +676,9 @@ async function fetchData() {
     if ((leftMode.value === "today" || leftMode.value === "7d" || leftMode.value === "30d") && statsTick % 5 === 0) {
       await fetchStats(leftMode.value);
     }
-    renderAll();
+    renderLeftChart();
+    fetchNodeHistory();
+    if (logsOpen.value) fetchAlerts();
   } catch (_e) {
     // Keep last state on transient glitch.
   }
@@ -593,8 +686,12 @@ async function fetchData() {
 
 function handleResize() {
   leftChart?.resize();
-  domain1Chart?.resize();
-  domain2Chart?.resize();
+}
+
+function handleRankingClick({ componentType, data }) {
+  if (leftMode.value !== "rank" || !rankByRack.value || componentType !== "series" || !data?.id) return;
+  openRack(data.id);
+  overviewEl.value?.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 watch([searchQuery, onlyAbnormal], () => {
@@ -605,24 +702,29 @@ watch(totalPages, (tp) => {
   if (currentPage.value > tp) currentPage.value = tp;
 });
 
-watch(selectedNodeId, () => renderAll());
+watch(selectedNodeId, () => {
+  renderLeftChart();
+  fetchNodeHistory();
+});
+
+watch([rankByRack, selectedRackId], () => {
+  if (leftMode.value === "rank") renderLeftChart();
+});
 
 onMounted(() => {
   leftChart = echarts.init(leftEl.value);
-  domain1Chart = echarts.init(domain1El.value);
-  domain2Chart = echarts.init(domain2El.value);
+  leftChart.on("click", handleRankingClick);
   window.addEventListener("resize", handleResize);
   fetchData();
   timer = setInterval(() => {
     if (autoRefresh.value) fetchData();
-  }, 2000);
+  }, REFRESH_MS);
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("resize", handleResize);
   if (timer) clearInterval(timer);
+  nodeHistoryRequest?.controller.abort();
   leftChart?.dispose();
-  domain1Chart?.dispose();
-  domain2Chart?.dispose();
 });
 </script>

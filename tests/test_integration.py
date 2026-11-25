@@ -156,3 +156,25 @@ class MTLSIntegrationTests(unittest.TestCase):
         anonymous = ssl.create_default_context(cafile=self.pem("ca"))
         with self.assertRaises((ssl.SSLError, ConnectionResetError, URLError)):
             urlopen(f"https://127.0.0.1:{self.a_port}/api/snapshot", context=anonymous, timeout=2)
+
+    def test_snapshot_exposes_today_energy_and_a_connection_events(self):
+        a = self.start_a("--sim-nodes", "1")
+        context = create_client_ssl_context(self.pem("ca"), self.pem("b_client"), self.pem("b_client", "key"))
+        self.wait_for(f"https://127.0.0.1:{self.a_port}/healthz", lambda r: r.get("status") == "ok", context)
+        self.start_b("simulated")
+        origin = f"http://127.0.0.1:{self.b_port}"
+        snapshot_url = origin + "/api/snapshot"
+        alerts_url = origin + "/api/alerts?range=today"
+        snapshot = self.wait_for(snapshot_url, lambda r: r["gateway"]["upstream_ok"])
+        self.assertIn("today_kwh", snapshot["cluster"])
+        self.wait_for(snapshot_url, lambda r: r["cluster"].get("today_kwh", 0) > 0)
+
+        self.stop(a)
+        errors = self.wait_for(alerts_url, lambda r: any(entry["level"] == "error" for entry in r["items"]))
+        self.assertEqual([entry["msg"] for entry in errors["items"]], ["汇聚上游连接中断"])
+        time.sleep(0.7)
+        self.start_a("--sim-nodes", "1")
+        recovered = self.wait_for(alerts_url, lambda r: any(entry["level"] == "info" for entry in r["items"]))
+        self.assertEqual(recovered["total"], 2)
+        self.assertEqual(recovered["items"][0]["msg"], "汇聚上游连接恢复")
+        self.wait_for(snapshot_url, lambda r: r["cluster"].get("today_alerts") == 2)

@@ -2,6 +2,7 @@
 """B-node mTLS pull gateway with SQLite minute/daily persistence for Nginx/Vue."""
 
 import argparse
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 from http.server import ThreadingHTTPServer
 import json
@@ -185,13 +186,22 @@ class EnergyStore:
 
 
     def get_today_kwh(self) -> float:
-        today_str = local_now().strftime("%Y-%m-%d")
+        return self.card_energy()["today_kwh"]
+
+    def card_energy(self):
+        today = local_now()
+        today_str = today.strftime("%Y-%m-%d")
+        week_start = (today - timedelta(days=6)).strftime("%Y-%m-%d")
         with self.lock:
-            row = self.conn.execute(
-                "SELECT COALESCE(SUM(energy_kwh), 0.0) AS kwh FROM minute_stats WHERE date_str = ?",
-                (today_str,),
-            ).fetchone()
-            return round(float(row["kwh"]), 4) if row else 0.0
+            row = self.conn.execute("""
+                SELECT COALESCE(SUM(CASE WHEN date_str = ? THEN energy_kwh ELSE 0 END), 0) AS today_kwh,
+                       COALESCE(SUM(energy_kwh), 0) AS energy_7d_kwh,
+                       COUNT(DISTINCT date_str) AS energy_7d_days
+                FROM minute_stats
+                WHERE date_str BETWEEN ? AND ? AND ts_minute <= ?
+            """, (today_str, week_start, today_str, today.strftime("%Y-%m-%dT%H:%M"))).fetchone()
+        return {"today_kwh": round(row["today_kwh"], 4), "energy_7d_kwh": round(row["energy_7d_kwh"], 4),
+                "energy_7d_days": row["energy_7d_days"]}
 
     def query_stats(self, range_name: str) -> Dict[str, Any]:
         now_dt = local_now()
@@ -202,10 +212,10 @@ class EnergyStore:
                     """
                     SELECT ts_minute, sum_power / samples AS avg_power, max_power, energy_kwh
                     FROM minute_stats
-                    WHERE date_str = ?
+                    WHERE date_str = ? AND ts_minute <= ?
                     ORDER BY ts_minute ASC
                     """,
-                    (today_str,),
+                    (today_str, now_dt.strftime("%Y-%m-%dT%H:%M")),
                 ).fetchall()
                 points = [
                     {
@@ -221,6 +231,7 @@ class EnergyStore:
                 peak_p = round(max((p["max_power"] for p in points), default=0.0), 2)
                 return {
                     "range": "today",
+                    "date": today_str,
                     "total_kwh": total_kwh,
                     "avg_power": avg_p,
                     "peak_power": peak_p,
@@ -237,11 +248,11 @@ class EnergyStore:
                        MAX(max_power) AS peak_power,
                        SUM(sum_eff) / SUM(samples) AS avg_eff
                 FROM minute_stats
-                WHERE date_str >= ?
+                WHERE date_str BETWEEN ? AND ? AND ts_minute <= ?
                 GROUP BY date_str
                 ORDER BY date_str ASC
                 """,
-                (start_date,),
+                (start_date, today_str, now_dt.strftime("%Y-%m-%dT%H:%M")),
             ).fetchall()
             days = [
                 {
@@ -264,29 +275,54 @@ class EnergyStore:
                 "days": days,
             }
 
-    def record_alerts(self, alerts: List[Dict[str, str]]) -> None:
+    def _insert_alerts(self, alerts: List[Dict[str, str]]) -> int:
         if not alerts:
-            return
+            return 0
         now_dt = local_now()
         cutoff = (now_dt - timedelta(days=35)).strftime("%Y-%m-%d")
-        with self.lock:
-            for a in alerts:
-                ts = str(a.get("ts") or "")
-                node = str(a.get("node") or "")
-                level = str(a.get("level") or "info")
-                msg = str(a.get("msg") or "")
-                if not ts or not node:
-                    continue
-                date_str = ts[:10]
-                self.conn.execute(
-                    """
-                    INSERT OR IGNORE INTO alert_events (ts, date_str, node, level, msg)
-                    VALUES (?, ?, ?, ?, ?)
-                    """,
-                    (ts, date_str, node, level, msg),
-                )
-            self.conn.execute("DELETE FROM alert_events WHERE date_str < ?", (cutoff,))
-            self.conn.commit()
+        rows = []
+        for event in alerts:
+            ts = str(event.get("ts") or "")
+            node = str(event.get("node") or "")
+            if ts and node and ts[:10] >= cutoff:
+                rows.append((ts, ts[:10], node, str(event.get("level") or "info"),
+                             str(event.get("msg") or "")))
+        inserted = self.conn.executemany("""
+            INSERT OR IGNORE INTO alert_events (ts, date_str, node, level, msg)
+            VALUES (?, ?, ?, ?, ?)
+        """, rows).rowcount
+        self.conn.execute("DELETE FROM alert_events WHERE date_str < ?", (cutoff,))
+        return inserted
+
+    def record_alerts(self, alerts: List[Dict[str, str]]) -> int:
+        with self.lock, self.conn:
+            return self._insert_alerts(alerts)
+
+    def import_alerts(self, legacy_db: Path) -> int:
+        source = Path(legacy_db).resolve(strict=True)
+        if Path(self.db_path).resolve() == source:
+            raise ValueError("legacy alerts must come from a separate database")
+        with closing(sqlite3.connect(source.as_uri() + "?mode=ro", uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            alerts = [dict(row) for row in connection.execute("SELECT ts, node, level, msg FROM alert_events")]
+        return self.record_alerts(alerts)
+
+    def record_health(self, observations) -> None:
+        with self.lock, self.conn:
+            row = self.conn.execute("SELECT value FROM meta WHERE key = 'monitor_health'").fetchone()
+            previous = json.loads(row[0]) if row else {}
+            current = dict(previous)
+            alerts = []
+            ts = now_iso()
+            for key, (ok, name, level, failed, restored) in observations.items():
+                current[key] = ok
+                if ok != previous.get(key, True):
+                    alerts.append({"ts": ts, "node": name, "level": "info" if ok else level,
+                                   "msg": restored if ok else failed})
+            if current != previous:
+                self._insert_alerts(alerts)
+                self.conn.execute("INSERT OR REPLACE INTO meta VALUES ('monitor_health', ?)",
+                                  (json.dumps(current, ensure_ascii=False),))
 
     def get_today_alerts_count(self) -> int:
         today_str = local_now().strftime("%Y-%m-%d")
@@ -344,6 +380,9 @@ class EnergyStore:
                 """,
                 params + [page_size, offset],
             ).fetchall()
+            nodes = self.conn.execute("""
+                SELECT DISTINCT node FROM alert_events WHERE date_str >= ? ORDER BY node
+            """, (start_date,)).fetchall()
 
         total_pages = max(1, (total + page_size - 1) // page_size)
         return {
@@ -352,6 +391,7 @@ class EnergyStore:
             "page": min(page, total_pages),
             "page_size": page_size,
             "total_pages": total_pages,
+            "nodes": [row["node"] for row in nodes],
             "items": [
                 {"ts": r["ts"], "node": r["node"], "level": r["level"], "msg": r["msg"]}
                 for r in rows
@@ -364,7 +404,8 @@ class EnergyStore:
 
 
 class GatewayState:
-    def __init__(self, upstream, context, stats, archive, interval, retention, hot_days, mode, jobs_file):
+    def __init__(self, upstream, context, stats, archive, interval, retention, hot_days, mode, jobs_file,
+                 sim_clock_offset_seconds=0):
         self.upstream = upstream
         self.context = context
         self.stats = stats
@@ -374,6 +415,7 @@ class GatewayState:
         self.hot_days = hot_days
         self.mode = mode
         self.jobs_file = jobs_file
+        self.sim_clock_offset = timedelta(seconds=sim_clock_offset_seconds)
         self.snapshot = {"nodes": [], "racks": [], "cluster": {}, "mode": mode}
         self.history = {"points": []}
         self.upstream_ok = False
@@ -382,12 +424,25 @@ class GatewayState:
         self.history_gap = archive.has_gap("A")
         self.next_cleanup = 0.0
 
+    def shift_times(self, record, *fields):
+        for field in fields:
+            if record.get(field):
+                record[field] = stamp(utc_time(record[field]) + self.sim_clock_offset)
+        return record
+
     def poll_once(self):
         try:
             snapshot = get_json(self.upstream, self.context, "/api/snapshot")
             if snapshot.get("mode") != self.mode:
                 raise ValueError("A and B must use the same real or simulated mode")
             history = get_json(self.upstream, self.context, "/api/history")
+            if self.sim_clock_offset:
+                self.shift_times(snapshot, "sampled_at", "updated_at")
+                for node in snapshot.get("nodes", []):
+                    self.shift_times(node, "collected_at")
+                self.shift_times(history, "updated_at")
+                for point in history["points"]:
+                    self.shift_times(point, "ts")
             power = snapshot.get("cluster", {}).get("total_power")
             sampled_at = snapshot.get("sampled_at") or snapshot["updated_at"]
             self.stats.record_cluster(sampled_at, power, 3 * self.interval, self.retention)
@@ -399,12 +454,24 @@ class GatewayState:
             self.upstream_ok = False
             self.upstream_error = str(exc)
 
+        observations = {"upstream": (self.upstream_ok, "A端", "error",
+                                     "汇聚上游连接中断", "汇聚上游连接恢复")}
         if self.upstream_ok:
+            for source, state in self.snapshot.get("sources", {}).items():
+                observations["source:" + source] = (state["ok"], source, "error",
+                                                    "采集源连接异常", "采集源连接恢复")
+            for node in self.snapshot.get("nodes", []):
+                node_id = node["node_id"]
+                observations["node:" + node_id] = (node["status"] == "online", node_id, "warn",
+                                                    "节点采样过期", "节点采样恢复")
             try:
-                self.history_gap = replay("A", self.upstream, self.context, self.archive) or self.history_gap
+                transform = (lambda row: self.shift_times(row, "collected_at")) if self.sim_clock_offset else None
+                self.history_gap = replay("A", self.upstream, self.context, self.archive,
+                                          map_sample=transform) or self.history_gap
                 self.history_error = None
             except (OSError, ValueError, KeyError) as exc:
                 self.history_error = str(exc)
+        self.stats.record_health(observations)
         if time.monotonic() >= self.next_cleanup:
             self.archive.maintain(stamp(), self.retention, self.hot_days)
             self.next_cleanup = time.monotonic() + 30
@@ -412,6 +479,12 @@ class GatewayState:
     def status(self):
         return {"upstream_ok": self.upstream_ok, "upstream_error": self.upstream_error,
                 "history_error": self.history_error, "history_gap": self.history_gap}
+
+    def read_snapshot(self):
+        snapshot = self.snapshot
+        cluster = {**snapshot.get("cluster", {}), **self.stats.card_energy(),
+                   "today_alerts": self.stats.get_today_alerts_count()}
+        return {**snapshot, "cluster": cluster, "gateway": self.status()}
 
     def source_time(self):
         return self.snapshot.get("updated_at") or stamp()
@@ -450,7 +523,7 @@ class GatewayHandler(JsonHandler):
             if path == "/healthz":
                 self.send_json(200, {"status": "ok", **self.state.status()})
             elif path == "/api/snapshot":
-                self.send_json(200, {**self.state.snapshot, "gateway": self.state.status()})
+                self.send_json(200, self.state.read_snapshot())
             elif path == "/api/history":
                 self.send_json(200, self.state.history)
             elif path == "/api/stats":
@@ -490,6 +563,8 @@ def main():
     parser.add_argument("--upstream", default="https://127.0.0.1:19200")
     parser.add_argument("--interval", type=float, default=DEFAULT_POLL_INTERVAL_SEC)
     parser.add_argument("--mode", choices=["real", "simulated"], default="real")
+    parser.add_argument("--sim-clock-offset-seconds", type=int, default=0,
+                        help="Measured application clock correction for simulated samples")
     parser.add_argument("--db")
     parser.add_argument("--archive-db")
     parser.add_argument("--retention-days", type=float, default=30)
@@ -499,6 +574,8 @@ def main():
     parser.add_argument("--cert", required=True)
     parser.add_argument("--key", required=True)
     args = parser.parse_args()
+    if args.sim_clock_offset_seconds and args.mode != "simulated":
+        parser.error("clock offset is only supported for simulated samples")
     if args.interval <= 0 or args.retention_days <= 0 or args.hot_days <= 0:
         parser.error("interval and retention must be positive")
     if not args.upstream.startswith("https://"):
@@ -508,7 +585,7 @@ def main():
     stats = EnergyStore(stats_path)
     archive = SampleStore(args.archive_db or str(Path(stats_path).with_suffix(".samples.sqlite")))
     state = GatewayState(args.upstream, context, stats, archive, args.interval, args.retention_days,
-                         args.hot_days, args.mode, args.jobs_file)
+                         args.hot_days, args.mode, args.jobs_file, args.sim_clock_offset_seconds)
     GatewayHandler.state = state
     stop = threading.Event()
     server = ThreadingHTTPServer((args.bind, args.port), GatewayHandler)

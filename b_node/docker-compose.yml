@@ -16,6 +16,8 @@ services:
       - "${CE_A_UPSTREAM:?Set the A HTTPS endpoint}"
       - --mode
       - "${CE_MODE:-real}"
+      - --sim-clock-offset-seconds
+      - "${CE_SIM_CLOCK_OFFSET_SECONDS:-0}"
       - --db
       - "/data/b-${CE_MODE:-real}.sqlite"
       - --ca

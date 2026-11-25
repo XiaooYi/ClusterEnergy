@@ -58,7 +58,7 @@ def get_json(address, context, route, params=None):
         return json.load(response)
 
 
-def replay(source, address, context, store, max_pages=5):
+def replay(source, address, context, store, max_pages=5, map_sample=None):
     for _ in range(max_pages):
         cursor = store.cursor(source)
         stream = store.source_stream(source)
@@ -66,6 +66,8 @@ def replay(source, address, context, store, max_pages=5):
         if stream is not None and page["stream_id"] != stream:
             page = get_json(address, context, "/api/samples", {"after": 0, "limit": PAGE_SIZE})
         samples = page["samples"]
+        if map_sample is not None:
+            samples = [map_sample(sample) for sample in samples]
         store.ingest(source, samples, page["next_cursor"], page["stream_id"], page["history_gap"])
         if len(samples) < PAGE_SIZE:
             break

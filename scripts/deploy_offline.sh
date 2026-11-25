@@ -130,6 +130,9 @@ else
     args=(--bind 127.0.0.1 --port "${CE_GATEWAY_PORT:-18081}" --upstream "$upstream"
           --ca /certs/ca.crt --cert /certs/b_client.crt --key /certs/b_client.key --mode "$mode" --interval "$interval"
           --db "/data/b-$mode.sqlite" --retention-days "${CE_B_RETENTION_DAYS:-30}" --hot-days "${CE_B_HOT_DAYS:-30}")
+    if [[ -n "${CE_SIM_CLOCK_OFFSET_SECONDS:-}" ]]; then
+        args+=(--sim-clock-offset-seconds "$CE_SIM_CLOCK_OFFSET_SECONDS")
+    fi
     if [[ -n "${CE_JOBS_DIR:-}" ]]; then
         mounts+=(--mount "type=bind,source=$CE_JOBS_DIR,target=/jobs,readonly")
         args+=(--jobs-file /jobs/jobs.json)

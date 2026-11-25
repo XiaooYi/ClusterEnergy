@@ -42,6 +42,8 @@ CE_A_UPSTREAM=https://a.example:19200
 
 证书默认放在各包的 certs 目录，可用 CE_CERTS_DIR 设置。CE_A_PORT、CE_C_PORT、CE_GATEWAY_PORT、CE_WEB_PORT 的默认值分别为 19200、19100、18081、18088。B 的网关只监听本机，Nginx 提供前端入口。Docker 使用 Linux host 网络模式。实验室旧拓扑使用反向隧道时，设置 B 的 CE_A_UPSTREAM 为反向端口对应的回环地址，A 的服务器证书须包含该回环地址。可直接用 A/C 原生启停脚本及 B 的 Python 网关验证同一协议。
 
+在 A、B 时钟存在已测量偏差的模拟环境，可用 CE_SIM_CLOCK_OFFSET_SECONDS 设置 B 接入时应用的秒数修正。更改此配置时应使用新的模拟库，或先将已有模拟样本与统计迁到相同的时间基准。真实采集以同步后的源时钟为准。
+
 ### mTLS 证书
 
 在签发机安装 cryptography 后生成证书。A 和 C 的证书 SAN 必须匹配拉取方使用的 DNS 名称或 IP。若需要回环访问，追加 --a-host 127.0.0.1。
