@@ -1,0 +1,17 @@
+"""Shared configuration constants and metric schema for ClusterEnergy."""
+
+SCHEMA_VERSION = 1
+
+N_DDQ_FIELDS = [f"N{i}_DDQ" for i in range(8)]
+N_CORE_FIELDS = [f"N{i}_CORE" for i in range(8)]
+NI_OUT_FIELDS = [f"NI{i}_OUT" for i in range(6)]
+HVM_OUT_FIELDS = [f"HVM{i}_OUT" for i in range(6)]
+
+TABLE1_FIELDS = N_DDQ_FIELDS + N_CORE_FIELDS
+TABLE2_FIELDS = NI_OUT_FIELDS + HVM_OUT_FIELDS
+ALL_METRIC_FIELDS = TABLE1_FIELDS + TABLE2_FIELDS
+
+DEFAULT_EXPORTER_PORT = 19100
+DEFAULT_AGGREGATOR_PORT = 19200
+DEFAULT_POLL_INTERVAL_SEC = 2.0
+DEFAULT_HISTORY_LEN = 150  # 5 minutes at 2s interval
