@@ -14,6 +14,7 @@ if [[ -n "${2:-}" ]]; then
 fi
 name="${CE_NAME:-clusterenergy-$role}"
 mode="${CE_MODE:-real}"
+storage="${CE_STORAGE:-sqlite}"
 certs="${CE_CERTS_DIR:-$root/certs}"
 config="${CE_CONFIG_DIR:-$root/config}"
 data="${CE_DATA_DIR:-$name-data}"
@@ -23,9 +24,30 @@ state_mount=(-v "$data:/data")
 network=(--network host)
 common=("${network[@]}" --restart unless-stopped --init --pull never)
 
+mysql_host="${CE_MYSQL_HOST:-127.0.0.1}"
+mysql_port="${CE_MYSQL_PORT:-3306}"
+mysql_user="${CE_MYSQL_USER:-clusterenergy}"
+mysql_password="${CE_MYSQL_PASSWORD:-clusterenergy123}"
+mysql_root_password="${CE_MYSQL_ROOT_PASSWORD:-$mysql_password}"
+mysql_db="${CE_MYSQL_DB:-clusterenergy_$mode}"
+mysql_data="${CE_MYSQL_DATA_DIR:-$name-mysql-data}"
+mysql_managed="${CE_MYSQL_MANAGED:-}"
+if [[ -z "$mysql_managed" ]]; then
+    if [[ "$storage" == mysql && ( "$mysql_host" == "127.0.0.1" || "$mysql_host" == "localhost" ) ]]; then
+        mysql_managed=true
+    else
+        mysql_managed=false
+    fi
+fi
+
 if [[ "$role" == b ]]; then
-    images=(gateway web)
-    names=("$name-gateway" "$name-web")
+    if [[ "$storage" == mysql && "$mysql_managed" == true ]]; then
+        images=(mysql gateway web)
+        names=("$name-mysql" "$name-gateway" "$name-web")
+    else
+        images=(gateway web)
+        names=("$name-gateway" "$name-web")
+    fi
 else
     images=("$role")
     names=("$name")
@@ -44,6 +66,10 @@ ensure_images() {
     fi
     for image in "${images[@]}"; do
         if [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "clusterenergy/$image:$arch" 2>/dev/null || true)" != "$platform" ]]; then
+            if [[ ! -r "$root/images/$image.tar" ]]; then
+                echo "Missing image archive: $root/images/$image.tar" >&2
+                exit 1
+            fi
             docker load -i "$root/images/$image.tar"
         fi
         if [[ "$(docker image inspect --format '{{.Os}}/{{.Architecture}}' "clusterenergy/$image:$arch")" != "$platform" ]]; then
@@ -55,7 +81,11 @@ ensure_images() {
 
 remove_service() {
     local instance
-    for instance in "${names[@]}"; do
+    local targets=("${names[@]}")
+    if [[ "$role" == b ]]; then
+        targets=("$name-web" "$name-gateway" "$name-mysql")
+    fi
+    for instance in "${targets[@]}"; do
         if docker container inspect "$instance" >/dev/null 2>&1; then
             docker rm -f "$instance" >/dev/null
         fi
@@ -70,6 +100,22 @@ require_files() {
             exit 1
         fi
     done
+}
+
+wait_for_mysql() {
+    local container="$1"
+    local attempts=90
+    echo "Waiting for MySQL container $container on 127.0.0.1:$mysql_port ..."
+    for ((i = 1; i <= attempts; i++)); do
+        if docker exec "$container" mysqladmin ping -h 127.0.0.1 -P "$mysql_port" -u root "-p$mysql_root_password" --silent >/dev/null 2>&1; then
+            echo "MySQL is ready."
+            return 0
+        fi
+        sleep 1
+    done
+    echo "MySQL container $container did not become ready within ${attempts}s" >&2
+    docker logs --tail 30 "$container" >&2 || true
+    return 1
 }
 
 case "${1:-start}" in
@@ -88,9 +134,14 @@ if [[ "$mode" != real && "$mode" != simulated ]]; then
     echo "CE_MODE must be real or simulated" >&2
     exit 2
 fi
+if [[ "$role" == b && "$storage" != sqlite && "$storage" != mysql ]]; then
+    echo "CE_STORAGE must be sqlite or mysql" >&2
+    exit 2
+fi
 require_files "$certs/ca.crt"
 mounts=()
 args=()
+gateway_env=()
 if [[ "$role" == a ]]; then
     require_files "$certs/a_server.crt" "$certs/a_server.key"
     args=(--bind "${CE_BIND:-0.0.0.0}" --port "${CE_A_PORT:-19200}" --interval "$interval"
@@ -129,7 +180,13 @@ else
     upstream="${CE_A_UPSTREAM:?Set CE_A_UPSTREAM to the A HTTPS endpoint}"
     args=(--bind 127.0.0.1 --port "${CE_GATEWAY_PORT:-18081}" --upstream "$upstream"
           --ca /certs/ca.crt --cert /certs/b_client.crt --key /certs/b_client.key --mode "$mode" --interval "$interval"
-          --db "/data/b-$mode.sqlite" --retention-days "${CE_B_RETENTION_DAYS:-30}" --hot-days "${CE_B_HOT_DAYS:-30}")
+          --storage "$storage" --db "/data/b-$mode.sqlite"
+          --retention-days "${CE_B_RETENTION_DAYS:-30}" --hot-days "${CE_B_HOT_DAYS:-30}")
+    if [[ "$storage" == mysql ]]; then
+        args+=(--mysql-host "$mysql_host" --mysql-port "$mysql_port"
+               --mysql-user "$mysql_user" --mysql-db "$mysql_db")
+        gateway_env+=(-e "CE_MYSQL_PASSWORD=$mysql_password")
+    fi
     if [[ -n "${CE_SIM_CLOCK_OFFSET_SECONDS:-}" ]]; then
         args+=(--sim-clock-offset-seconds "$CE_SIM_CLOCK_OFFSET_SECONDS")
     fi
@@ -141,9 +198,28 @@ fi
 ensure_images
 remove_service
 if [[ "$role" == b ]]; then
-    docker run -d --name "${names[0]}" "${common[@]}" "${cert_mount[@]}" \
-        "${state_mount[@]}" "${mounts[@]}" "clusterenergy/gateway:$arch" "${args[@]}"
-    if ! docker run -d --name "${names[1]}" "${common[@]}" \
+    if [[ "$storage" == mysql && "$mysql_managed" == true ]]; then
+        docker run -d --name "$name-mysql" "${common[@]}" \
+            -v "$mysql_data:/var/lib/mysql" \
+            -e "MYSQL_ROOT_PASSWORD=$mysql_root_password" \
+            -e "MYSQL_DATABASE=$mysql_db" \
+            -e "MYSQL_USER=$mysql_user" \
+            -e "MYSQL_PASSWORD=$mysql_password" \
+            "clusterenergy/mysql:$arch" \
+            --bind-address=127.0.0.1 --port="$mysql_port" \
+            --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+        if ! wait_for_mysql "$name-mysql"; then
+            remove_service
+            exit 1
+        fi
+    fi
+    if ! docker run -d --name "$name-gateway" "${common[@]}" "${cert_mount[@]}" \
+        "${state_mount[@]}" "${mounts[@]}" "${gateway_env[@]}" \
+        "clusterenergy/gateway:$arch" "${args[@]}"; then
+        remove_service
+        exit 1
+    fi
+    if ! docker run -d --name "$name-web" "${common[@]}" \
         -e "CE_GATEWAY_ADDR=127.0.0.1:${CE_GATEWAY_PORT:-18081}" -e "CE_WEB_PORT=${CE_WEB_PORT:-18088}" \
         "clusterenergy/web:$arch"; then
         remove_service

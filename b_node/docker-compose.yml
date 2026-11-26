@@ -7,6 +7,8 @@ services:
     volumes:
       - "${CE_CERTS_DIR:-./certs}:/certs:ro"
       - b-data:/data
+    environment:
+      CE_MYSQL_PASSWORD: "${CE_MYSQL_PASSWORD:-clusterenergy123}"
     command:
       - --bind
       - "127.0.0.1"
@@ -16,6 +18,16 @@ services:
       - "${CE_A_UPSTREAM:?Set the A HTTPS endpoint}"
       - --mode
       - "${CE_MODE:-real}"
+      - --storage
+      - "${CE_STORAGE:-sqlite}"
+      - --mysql-host
+      - "${CE_MYSQL_HOST:-127.0.0.1}"
+      - --mysql-port
+      - "${CE_MYSQL_PORT:-3306}"
+      - --mysql-user
+      - "${CE_MYSQL_USER:-clusterenergy}"
+      - --mysql-db
+      - "${CE_MYSQL_DB:-clusterenergy_${CE_MODE:-real}}"
       - --sim-clock-offset-seconds
       - "${CE_SIM_CLOCK_OFFSET_SECONDS:-0}"
       - --db
@@ -26,6 +38,24 @@ services:
       - /certs/b_client.crt
       - --key
       - /certs/b_client.key
+  b-mysql:
+    image: clusterenergy/mysql:${CE_ARCH:-arm64}
+    profiles: ["mysql"]
+    pull_policy: never
+    network_mode: host
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: "${CE_MYSQL_ROOT_PASSWORD:-${CE_MYSQL_PASSWORD:-clusterenergy123}}"
+      MYSQL_DATABASE: "${CE_MYSQL_DB:-clusterenergy_${CE_MODE:-real}}"
+      MYSQL_USER: "${CE_MYSQL_USER:-clusterenergy}"
+      MYSQL_PASSWORD: "${CE_MYSQL_PASSWORD:-clusterenergy123}"
+    volumes:
+      - b-mysql-data:/var/lib/mysql
+    command:
+      - --bind-address=127.0.0.1
+      - --port=${CE_MYSQL_PORT:-3306}
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
   b-web:
     image: clusterenergy/web:${CE_ARCH:-arm64}
     pull_policy: never
@@ -38,3 +68,4 @@ services:
       - b-gateway
 volumes:
   b-data:
+  b-mysql-data:

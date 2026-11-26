@@ -12,7 +12,7 @@ import tempfile
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLES = {"a": ("a",), "b": ("gateway", "web"), "c": ("c",)}
+ROLES = {"a": ("a",), "b": ("gateway", "web", "mysql"), "c": ("c",)}
 
 
 def verify_platform(archive, expected, image):
@@ -45,14 +45,15 @@ def build_image(name, image, platform, destination, builder, base_images):
     subprocess.run([*command, str(ROOT)], check=True)
 
 
-def package(roles, platform, out, builder=None, images_dir=None, base_images=None):
+def package(roles, platform, out, builder=None, images_dir=None, base_images=None, include_mysql=True):
     arch = platform.split("/")[1]
     out.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=f".build-{arch}-", dir=str(out)) as directory:
         staging = Path(directory)
         for role in roles:
             images = []
-            for name in ROLES[role]:
+            role_images = tuple(name for name in ROLES[role] if include_mysql or name != "mysql")
+            for name in role_images:
                 image = f"clusterenergy/{name}:{arch}"
                 tar_path = (images_dir or staging) / f"{name}.tar"
                 if images_dir is None:
@@ -87,6 +88,8 @@ def main():
     parser.add_argument("--builder")
     parser.add_argument("--python-base")
     parser.add_argument("--nginx-base")
+    parser.add_argument("--mysql-base")
+    parser.add_argument("--skip-mysql", action="store_true", help="omit MySQL image from the B bundle")
     parser.add_argument("--images-dir", type=Path, help="package existing Docker image archives")
     args = parser.parse_args()
     if "b" in args.roles and args.images_dir is None and not (ROOT / "b_node/frontend/dist/index.html").is_file():
@@ -94,8 +97,10 @@ def main():
         subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=ROOT / "b_node/frontend", check=True)
         subprocess.run([npm, "run", "build"], cwd=ROOT / "b_node/frontend", check=True)
     bases = {key: value for key, value in {"CE_PYTHON_BASE": args.python_base,
-                                          "CE_NGINX_BASE": args.nginx_base}.items() if value}
-    package(args.roles, args.platform, args.output.resolve(), args.builder, args.images_dir, bases)
+                                          "CE_NGINX_BASE": args.nginx_base,
+                                          "CE_MYSQL_BASE": args.mysql_base}.items() if value}
+    package(args.roles, args.platform, args.output.resolve(), args.builder, args.images_dir, bases,
+            include_mysql=not args.skip_mysql)
     return 0
 
 

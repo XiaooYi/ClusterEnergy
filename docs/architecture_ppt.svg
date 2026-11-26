@@ -1,0 +1,410 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" width="1600" height="900">
+  <defs>
+    <style>
+      .font-sans { font-family: "Microsoft YaHei", "PingFang SC", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif; }
+      .font-mono { font-family: "Cascadia Code", "Consolas", "SFMono-Regular", monospace; }
+    </style>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F8FAFC"/>
+      <stop offset="100%" stop-color="#EEF2F7"/>
+    </linearGradient>
+    <linearGradient id="titleAccent" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0D9488"/>
+      <stop offset="50%" stop-color="#2563EB"/>
+      <stop offset="100%" stop-color="#4F46E5"/>
+    </linearGradient>
+    <linearGradient id="cHeader" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0F766E"/>
+      <stop offset="100%" stop-color="#0D9488"/>
+    </linearGradient>
+    <linearGradient id="aHeader" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#1D4ED8"/>
+      <stop offset="100%" stop-color="#2563EB"/>
+    </linearGradient>
+    <linearGradient id="bHeader" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#4338CA"/>
+      <stop offset="100%" stop-color="#6366F1"/>
+    </linearGradient>
+    <linearGradient id="uHeader" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#B45309"/>
+      <stop offset="100%" stop-color="#D97706"/>
+    </linearGradient>
+    <filter id="cardShadow" x="-4%" y="-4%" width="108%" height="112%">
+      <feDropShadow dx="0" dy="3" stdDeviation="5" flood-color="#0F172A" flood-opacity="0.06"/>
+    </filter>
+    <filter id="softShadow" x="-3%" y="-3%" width="106%" height="110%">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#0F172A" flood-opacity="0.05"/>
+    </filter>
+    <marker id="arrowTeal" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#0D9488"/>
+    </marker>
+    <marker id="arrowSky" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#0284C7"/>
+    </marker>
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#2563EB"/>
+    </marker>
+    <marker id="arrowIndigo" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#4F46E5"/>
+    </marker>
+    <marker id="arrowAmber" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 1 1.5 L 9 5 L 1 8.5 z" fill="#D97706"/>
+    </marker>
+  </defs>
+
+  <!-- Slide Canvas -->
+  <rect x="0" y="0" width="1600" height="900" fill="url(#bgGrad)"/>
+  <rect x="20" y="18" width="1560" height="864" rx="20" fill="#FFFFFF" stroke="#E2E8F0" stroke-width="1.5" filter="url(#cardShadow)"/>
+
+  <!-- ==================== HEADER ==================== -->
+  <rect x="44" y="40" width="8" height="54" rx="4" fill="url(#titleAccent)"/>
+  <text x="66" y="66" class="font-sans" font-size="28" font-weight="700" fill="#0F172A">ClusterEnergy 超算能耗监控系统架构</text>
+  <text x="66" y="92" class="font-sans" font-size="14" fill="#475569">C 端采集 → A 端汇聚 → B 端展示三端分层架构 · ARM64 全离线部署 · mTLS 双向认证 · 5 秒实时监控</text>
+
+  <!-- Top Right Badges -->
+  <g transform="translate(1062, 48)">
+    <rect x="0" y="0" width="156" height="36" rx="18" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1.2"/>
+    <circle cx="20" cy="18" r="5" fill="#4F46E5"/>
+    <text x="34" y="23" class="font-sans" font-size="13" font-weight="600" fill="#3730A3">ARM64 离线容器</text>
+
+    <rect x="168" y="0" width="162" height="36" rx="18" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1.2"/>
+    <circle cx="188" cy="18" r="5" fill="#059669"/>
+    <text x="202" y="23" class="font-sans" font-size="13" font-weight="600" fill="#065F46">mTLS 双向认证</text>
+
+    <rect x="342" y="0" width="152" height="36" rx="18" fill="#E0F2FE" stroke="#BAE6FD" stroke-width="1.2"/>
+    <circle cx="362" cy="18" r="5" fill="#0284C7"/>
+    <text x="376" y="23" class="font-sans" font-size="13" font-weight="600" fill="#075985">5 秒实时采样</text>
+  </g>
+  <line x1="44" y1="114" x2="1556" y2="114" stroke="#E2E8F0" stroke-width="1.2"/>
+
+  <!-- ==================== COLUMN 1: C NODE ==================== -->
+  <g id="col-c">
+    <rect x="44" y="132" width="300" height="572" rx="16" fill="#F0FDFA" stroke="#5EEAD4" stroke-width="1.5"/>
+    <path d="M 44 148 Q 44 132 60 132 L 328 132 Q 344 132 344 148 L 344 188 L 44 188 Z" fill="url(#cHeader)"/>
+    <text x="62" y="159" class="font-sans" font-size="18" font-weight="700" fill="#FFFFFF">C 端 · 数据采集层</text>
+    <text x="62" y="178" class="font-sans" font-size="12" fill="#CCFBF1">ARM64 登录节点 (C1 / C2)</text>
+    <rect x="234" y="146" width="96" height="24" rx="12" fill="#FFFFFF" fill-opacity="0.2" stroke="#99F6E4" stroke-width="0.8"/>
+    <text x="282" y="162" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#FFFFFF">模拟模式可省</text>
+
+    <!-- C Top: Source File -->
+    <rect x="62" y="206" width="264" height="104" rx="12" fill="#FFFFFF" stroke="#99F6E4" stroke-width="1.3" filter="url(#softShadow)"/>
+    <rect x="76" y="218" width="84" height="20" rx="10" fill="#CCFBF1"/>
+    <text x="118" y="232" text-anchor="middle" class="font-sans" font-size="11" font-weight="700" fill="#0F766E">本地采集输入</text>
+    <text x="76" y="261" class="font-mono" font-size="15.5" font-weight="700" fill="#0F172A">latest.json</text>
+    <text x="184" y="260" class="font-sans" font-size="12" fill="#64748B">（只读挂载）</text>
+    <text x="76" y="284" class="font-sans" font-size="12" fill="#475569">支持批量节点 JSON 原子更新</text>
+    <text x="76" y="301" class="font-sans" font-size="11.5" fill="#64748B">可选 config/schema.json 自定义字段映射</text>
+
+    <!-- Arrow C1 -> C2 -->
+    <line x1="194" y1="310" x2="194" y2="342" stroke="#0D9488" stroke-width="2" marker-end="url(#arrowTeal)"/>
+    <rect x="206" y="315" width="84" height="22" rx="11" fill="#FFFFFF" stroke="#99F6E4" stroke-width="1"/>
+    <text x="248" y="330" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#0F766E">5s 增量读取</text>
+
+    <!-- C Mid: Exporter -->
+    <rect x="62" y="346" width="264" height="146" rx="12" fill="#FFFFFF" stroke="#14B8A6" stroke-width="1.8" filter="url(#softShadow)"/>
+    <rect x="62" y="346" width="6" height="146" rx="3" fill="#0D9488"/>
+    <text x="80" y="374" class="font-mono" font-size="16" font-weight="700" fill="#0F172A">exporter.py</text>
+    <rect x="242" y="356" width="70" height="24" rx="12" fill="#CCFBF1"/>
+    <text x="277" y="372" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#0F766E">:19100</text>
+    <text x="80" y="398" class="font-sans" font-size="12.5" fill="#475569">mTLS HTTPS 采集导出服务</text>
+    <rect x="80" y="414" width="110" height="26" rx="6" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1"/>
+    <text x="135" y="431" text-anchor="middle" class="font-mono" font-size="11.5" fill="#0F766E">/api/samples</text>
+    <rect x="198" y="414" width="110" height="26" rx="6" fill="#F0FDFA" stroke="#99F6E4" stroke-width="1"/>
+    <text x="253" y="431" text-anchor="middle" class="font-mono" font-size="11.5" fill="#0F766E">/api/current</text>
+    <text x="80" y="464" class="font-sans" font-size="11.5" fill="#64748B">标准化节点功耗 · 校验客户端证书</text>
+    <text x="80" y="481" class="font-sans" font-size="11.5" fill="#64748B">提供分页游标补拉与过期水位标记</text>
+
+    <!-- Arrow C2 <-> C3 -->
+    <line x1="194" y1="494" x2="194" y2="532" stroke="#0D9488" stroke-width="2" marker-start="url(#arrowTeal)" marker-end="url(#arrowTeal)"/>
+    <rect x="206" y="502" width="72" height="22" rx="11" fill="#FFFFFF" stroke="#99F6E4" stroke-width="1"/>
+    <text x="242" y="517" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#0F766E">冷备读写</text>
+
+    <!-- C Bottom: SQLite -->
+    <rect x="62" y="538" width="264" height="148" rx="12" fill="#FFFFFF" stroke="#99F6E4" stroke-width="1.3" filter="url(#softShadow)"/>
+    <!-- DB Cylinder Icon -->
+    <g transform="translate(76, 554)">
+      <ellipse cx="13" cy="6" rx="12" ry="5" fill="#CCFBF1" stroke="#0D9488" stroke-width="1.5"/>
+      <path d="M 1 6 L 1 24 C 1 27 25 27 25 24 L 25 6" fill="#F0FDFA" stroke="#0D9488" stroke-width="1.5"/>
+      <path d="M 1 15 C 1 18 25 18 25 15" fill="none" stroke="#0D9488" stroke-width="1.2"/>
+    </g>
+    <text x="112" y="569" class="font-sans" font-size="14.5" font-weight="700" fill="#0F172A">SQLite (WAL) 冷备库</text>
+    <text x="112" y="588" class="font-mono" font-size="11.5" fill="#0F766E">c-replay.sqlite</text>
+    <rect x="76" y="604" width="236" height="68" rx="8" fill="#F0FDFA" stroke="#CCFBF1" stroke-width="1"/>
+    <text x="88" y="625" class="font-sans" font-size="12.5" font-weight="700" fill="#0F766E">默认保留 1 天（可配 0.5–3 天）</text>
+    <text x="88" y="645" class="font-sans" font-size="11.5" fill="#475569">• power_samples：按节点时间去重</text>
+    <text x="88" y="663" class="font-sans" font-size="11.5" fill="#475569">• replay_state：支持故障后数据补拉</text>
+  </g>
+
+  <!-- ==================== CONNECTOR C -> A ==================== -->
+  <g id="conn-c-a">
+    <line x1="344" y1="419" x2="438" y2="419" stroke="#0284C7" stroke-width="3" marker-end="url(#arrowSky)"/>
+    <rect x="350" y="362" width="90" height="46" rx="10" fill="#FFFFFF" stroke="#38BDF8" stroke-width="1.5" filter="url(#softShadow)"/>
+    <text x="395" y="382" text-anchor="middle" class="font-sans" font-size="12.5" font-weight="700" fill="#0369A1">mTLS 拉取</text>
+    <text x="395" y="399" text-anchor="middle" class="font-sans" font-size="11" fill="#475569">5s · 分页补拉</text>
+  </g>
+
+  <!-- ==================== COLUMN 2: A NODE ==================== -->
+  <g id="col-a">
+    <rect x="446" y="132" width="330" height="572" rx="16" fill="#EFF6FF" stroke="#93C5FD" stroke-width="1.5"/>
+    <path d="M 446 148 Q 446 132 462 132 L 760 132 Q 776 132 776 148 L 776 188 L 446 188 Z" fill="url(#aHeader)"/>
+    <text x="464" y="159" class="font-sans" font-size="18" font-weight="700" fill="#FFFFFF">A 端 · 汇聚计算层</text>
+    <text x="464" y="178" class="font-sans" font-size="12" fill="#DBEAFE">ARM64 登录节点 · 全局实时聚合中心</text>
+
+    <!-- A Top: Simulator + Racks -->
+    <rect x="464" y="206" width="142" height="104" rx="12" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.4" stroke-dasharray="5,3" filter="url(#softShadow)"/>
+    <rect x="476" y="218" width="72" height="20" rx="10" fill="#FEF3C7"/>
+    <text x="512" y="232" text-anchor="middle" class="font-sans" font-size="11" font-weight="700" fill="#B45309">模拟数据源</text>
+    <text x="476" y="261" class="font-sans" font-size="14.5" font-weight="700" fill="#0F172A">内置模拟器</text>
+    <text x="476" y="282" class="font-mono" font-size="10.5" fill="#92400E">CE_MODE=simulated</text>
+    <text x="476" y="299" class="font-sans" font-size="11" fill="#78350F">无需 C 端即可独立验收</text>
+
+    <rect x="616" y="206" width="142" height="104" rx="12" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.3" filter="url(#softShadow)"/>
+    <rect x="628" y="218" width="66" height="20" rx="10" fill="#DBEAFE"/>
+    <text x="661" y="232" text-anchor="middle" class="font-sans" font-size="11" font-weight="700" fill="#1D4ED8">拓扑映射</text>
+    <text x="628" y="261" class="font-sans" font-size="14.5" font-weight="700" fill="#0F172A">机柜台账</text>
+    <text x="628" y="282" class="font-mono" font-size="11" fill="#1D4ED8">config/racks.json</text>
+    <text x="628" y="299" class="font-sans" font-size="11" fill="#64748B">节点 ID → 机柜编号</text>
+
+    <!-- Arrows into Aggregator -->
+    <line x1="535" y1="310" x2="535" y2="342" stroke="#D97706" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrowAmber)"/>
+    <line x1="687" y1="310" x2="687" y2="342" stroke="#2563EB" stroke-width="2" marker-end="url(#arrowBlue)"/>
+
+    <!-- A Mid: Aggregator -->
+    <rect x="464" y="346" width="294" height="146" rx="12" fill="#FFFFFF" stroke="#3B82F6" stroke-width="1.8" filter="url(#softShadow)"/>
+    <rect x="464" y="346" width="6" height="146" rx="3" fill="#2563EB"/>
+    <text x="482" y="374" class="font-mono" font-size="16" font-weight="700" fill="#0F172A">aggregator.py</text>
+    <rect x="674" y="356" width="70" height="24" rx="12" fill="#DBEAFE"/>
+    <text x="709" y="372" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#1D4ED8">:19200</text>
+    <text x="482" y="397" class="font-sans" font-size="12.5" fill="#475569">mTLS 汇聚服务与实时计算引擎</text>
+
+    <!-- 3 feature pills -->
+    <rect x="482" y="409" width="84" height="24" rx="6" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+    <text x="524" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#1E40AF">集群总功耗</text>
+    <rect x="572" y="409" width="84" height="24" rx="6" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+    <text x="614" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#1E40AF">按机柜聚合</text>
+    <rect x="662" y="409" width="82" height="24" rx="6" fill="#EFF6FF" stroke="#BFDBFE" stroke-width="1"/>
+    <text x="703" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#1E40AF">过期剔除</text>
+
+    <!-- API chips -->
+    <rect x="482" y="440" width="88" height="22" rx="5" fill="#F8FAFC" stroke="#BFDBFE" stroke-width="0.9"/>
+    <text x="526" y="455" text-anchor="middle" class="font-mono" font-size="10" fill="#1D4ED8">/api/snapshot</text>
+    <rect x="576" y="440" width="80" height="22" rx="5" fill="#F8FAFC" stroke="#BFDBFE" stroke-width="0.9"/>
+    <text x="616" y="455" text-anchor="middle" class="font-mono" font-size="10" fill="#1D4ED8">/api/history</text>
+    <rect x="662" y="440" width="82" height="22" rx="5" fill="#F8FAFC" stroke="#BFDBFE" stroke-width="0.9"/>
+    <text x="703" y="455" text-anchor="middle" class="font-mono" font-size="10" fill="#1D4ED8">/api/samples</text>
+    <text x="482" y="481" class="font-sans" font-size="11.5" fill="#64748B">维护 5 分钟内存趋势窗口与各采集源健康状态</text>
+
+    <!-- Arrow A2 <-> A3 -->
+    <line x1="611" y1="494" x2="611" y2="532" stroke="#2563EB" stroke-width="2" marker-start="url(#arrowBlue)" marker-end="url(#arrowBlue)"/>
+    <rect x="623" y="502" width="72" height="22" rx="11" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1"/>
+    <text x="659" y="517" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#1D4ED8">热存读写</text>
+
+    <!-- A Bottom: SQLite -->
+    <rect x="464" y="538" width="294" height="148" rx="12" fill="#FFFFFF" stroke="#93C5FD" stroke-width="1.3" filter="url(#softShadow)"/>
+    <g transform="translate(478, 554)">
+      <ellipse cx="13" cy="6" rx="12" ry="5" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+      <path d="M 1 6 L 1 24 C 1 27 25 27 25 24 L 25 6" fill="#EFF6FF" stroke="#2563EB" stroke-width="1.5"/>
+      <path d="M 1 15 C 1 18 25 18 25 15" fill="none" stroke="#2563EB" stroke-width="1.2"/>
+    </g>
+    <text x="514" y="569" class="font-sans" font-size="14.5" font-weight="700" fill="#0F172A">SQLite (WAL) 热数据库</text>
+    <text x="514" y="588" class="font-mono" font-size="11.5" fill="#1D4ED8">a-real / a-simulated.sqlite</text>
+    <rect x="478" y="604" width="266" height="68" rx="8" fill="#EFF6FF" stroke="#DBEAFE" stroke-width="1"/>
+    <text x="490" y="625" class="font-sans" font-size="12.5" font-weight="700" fill="#1D4ED8">默认保留 15 天（可调至 30 天）</text>
+    <text x="490" y="645" class="font-sans" font-size="11.5" fill="#475569">• 模拟库与真实库物理隔离，互不污染</text>
+    <text x="490" y="663" class="font-sans" font-size="11.5" fill="#475569">• 供 B 端断线重启后按游标断点续传</text>
+  </g>
+
+  <!-- ==================== CONNECTOR A -> B ==================== -->
+  <g id="conn-a-b">
+    <line x1="776" y1="419" x2="870" y2="419" stroke="#4F46E5" stroke-width="3" marker-end="url(#arrowIndigo)"/>
+    <rect x="782" y="362" width="90" height="46" rx="10" fill="#FFFFFF" stroke="#818CF8" stroke-width="1.5" filter="url(#softShadow)"/>
+    <text x="827" y="382" text-anchor="middle" class="font-sans" font-size="12.5" font-weight="700" fill="#4338CA">mTLS 拉取</text>
+    <text x="827" y="399" text-anchor="middle" class="font-sans" font-size="11" fill="#475569">5s · 快照+增量</text>
+  </g>
+
+  <!-- ==================== COLUMN 3: B NODE ==================== -->
+  <g id="col-b">
+    <rect x="878" y="132" width="424" height="572" rx="16" fill="#EEF2FF" stroke="#A5B4FC" stroke-width="1.5"/>
+    <path d="M 878 148 Q 878 132 894 132 L 1286 132 Q 1302 132 1302 148 L 1302 188 L 878 188 Z" fill="url(#bHeader)"/>
+    <text x="896" y="159" class="font-sans" font-size="18" font-weight="700" fill="#FFFFFF">B 端 · 存储与展示层</text>
+    <text x="896" y="178" class="font-sans" font-size="12" fill="#E0E7FF">ARM64 登录节点 · 全量归档与 Web 入口</text>
+
+    <!-- B Top Left: Nginx Web -->
+    <rect x="894" y="206" width="250" height="104" rx="12" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.6" filter="url(#softShadow)"/>
+    <rect x="894" y="206" width="6" height="104" rx="3" fill="#4F46E5"/>
+    <text x="910" y="232" class="font-sans" font-size="15.5" font-weight="700" fill="#0F172A">Nginx Web 入口</text>
+    <rect x="1064" y="215" width="68" height="24" rx="12" fill="#E0E7FF"/>
+    <text x="1098" y="231" text-anchor="middle" class="font-mono" font-size="12" font-weight="700" fill="#4338CA">:18088</text>
+    <text x="910" y="256" class="font-sans" font-size="12.5" fill="#475569">托管 Vue 3 + ECharts 静态大屏</text>
+    <rect x="910" y="270" width="222" height="26" rx="6" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1021" y="287" text-anchor="middle" class="font-mono" font-size="10.5" fill="#3730A3">反向代理 /api/* → 127.0.0.1:18081</text>
+
+    <!-- B Top Right: Optional Slurm -->
+    <rect x="1156" y="206" width="130" height="104" rx="12" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.4" stroke-dasharray="5,3" filter="url(#softShadow)"/>
+    <rect x="1168" y="218" width="62" height="20" rx="10" fill="#FEF3C7"/>
+    <text x="1199" y="232" text-anchor="middle" class="font-sans" font-size="11" font-weight="700" fill="#B45309">可选扩展</text>
+    <text x="1168" y="259" class="font-sans" font-size="14" font-weight="700" fill="#0F172A">Slurm 作业</text>
+    <text x="1168" y="279" class="font-mono" font-size="11" fill="#92400E">poll_slurm.py</text>
+    <text x="1168" y="297" class="font-sans" font-size="11" fill="#78350F">60s 产出 jobs.json</text>
+
+    <!-- Arrows: Nginx <-> Gateway & Slurm -> Gateway -->
+    <line x1="1019" y1="312" x2="1019" y2="342" stroke="#4F46E5" stroke-width="2" marker-start="url(#arrowIndigo)" marker-end="url(#arrowIndigo)"/>
+    <rect x="1031" y="316" width="76" height="20" rx="10" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1069" y="330" text-anchor="middle" class="font-sans" font-size="10.5" font-weight="600" fill="#4338CA">本机回环代理</text>
+
+    <line x1="1221" y1="310" x2="1221" y2="342" stroke="#D97706" stroke-width="2" stroke-dasharray="4,3" marker-end="url(#arrowAmber)"/>
+
+    <!-- B Mid: Gateway -->
+    <rect x="894" y="346" width="392" height="146" rx="12" fill="#FFFFFF" stroke="#6366F1" stroke-width="1.8" filter="url(#softShadow)"/>
+    <rect x="894" y="346" width="6" height="146" rx="3" fill="#4F46E5"/>
+    <text x="912" y="374" class="font-mono" font-size="16" font-weight="700" fill="#0F172A">gateway.py</text>
+    <rect x="1144" y="356" width="128" height="24" rx="12" fill="#E0E7FF"/>
+    <text x="1208" y="372" text-anchor="middle" class="font-mono" font-size="11.5" font-weight="700" fill="#4338CA">127.0.0.1:18081</text>
+    <text x="912" y="397" class="font-sans" font-size="12.5" fill="#475569">B 端数据网关（仅监听本机，对外零直接暴露）</text>
+
+    <!-- 4 capability pills -->
+    <rect x="912" y="409" width="84" height="24" rx="6" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="954" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#3730A3">电量积分</text>
+    <rect x="1004" y="409" width="84" height="24" rx="6" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1046" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#3730A3">异常告警</text>
+    <rect x="1096" y="409" width="84" height="24" rx="6" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1138" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#3730A3">游标补拉</text>
+    <rect x="1188" y="409" width="84" height="24" rx="6" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1230" y="425" text-anchor="middle" class="font-sans" font-size="11.5" font-weight="600" fill="#3730A3">作业估算</text>
+
+    <!-- 5 compact API chips -->
+    <rect x="912" y="440" width="72" height="22" rx="5" fill="#F8FAFC" stroke="#C7D2FE" stroke-width="0.9"/>
+    <text x="948" y="455" text-anchor="middle" class="font-mono" font-size="9.5" fill="#4338CA">/snapshot</text>
+    <rect x="990" y="440" width="54" height="22" rx="5" fill="#F8FAFC" stroke="#C7D2FE" stroke-width="0.9"/>
+    <text x="1017" y="455" text-anchor="middle" class="font-mono" font-size="9.5" fill="#4338CA">/stats</text>
+    <rect x="1050" y="440" width="96" height="22" rx="5" fill="#F8FAFC" stroke="#C7D2FE" stroke-width="0.9"/>
+    <text x="1098" y="455" text-anchor="middle" class="font-mono" font-size="9.5" fill="#4338CA">/node-history</text>
+    <rect x="1152" y="440" width="60" height="22" rx="5" fill="#F8FAFC" stroke="#C7D2FE" stroke-width="0.9"/>
+    <text x="1182" y="455" text-anchor="middle" class="font-mono" font-size="9.5" fill="#4338CA">/alerts</text>
+    <rect x="1218" y="440" width="54" height="22" rx="5" fill="#F8FAFC" stroke="#C7D2FE" stroke-width="0.9"/>
+    <text x="1245" y="455" text-anchor="middle" class="font-mono" font-size="9.5" fill="#4338CA">/jobs</text>
+
+    <text x="912" y="481" class="font-sans" font-size="11.5" fill="#64748B">北京时间统一校准 · 采样去重 · 定时触发冷数据压缩与过期清理</text>
+
+    <!-- Arrows Gateway <-> Dual DBs -->
+    <line x1="988" y1="494" x2="988" y2="532" stroke="#4F46E5" stroke-width="2" marker-start="url(#arrowIndigo)" marker-end="url(#arrowIndigo)"/>
+    <line x1="1192" y1="494" x2="1192" y2="532" stroke="#4F46E5" stroke-width="2" marker-start="url(#arrowIndigo)" marker-end="url(#arrowIndigo)"/>
+    <rect x="1049" y="502" width="82" height="22" rx="11" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1090" y="517" text-anchor="middle" class="font-sans" font-size="11" font-weight="600" fill="#4338CA">双库持久化</text>
+
+    <!-- B Bottom Left: EnergyStore -->
+    <rect x="894" y="538" width="188" height="148" rx="12" fill="#FFFFFF" stroke="#A5B4FC" stroke-width="1.3" filter="url(#softShadow)"/>
+    <g transform="translate(906, 553)">
+      <ellipse cx="11" cy="5" rx="10" ry="4.5" fill="#E0E7FF" stroke="#4F46E5" stroke-width="1.4"/>
+      <path d="M 1 5 L 1 21 C 1 24 21 24 21 21 L 21 5" fill="#EEF2FF" stroke="#4F46E5" stroke-width="1.4"/>
+      <path d="M 1 13 C 1 16 21 16 21 13" fill="none" stroke="#4F46E5" stroke-width="1.1"/>
+    </g>
+    <text x="936" y="566" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">统计与告警库</text>
+    <text x="936" y="584" class="font-mono" font-size="11" fill="#4338CA">EnergyStore</text>
+    <rect x="906" y="598" width="164" height="76" rx="8" fill="#EEF2FF" stroke="#E0E7FF" stroke-width="1"/>
+    <text x="916" y="617" class="font-mono" font-size="11.5" font-weight="700" fill="#3730A3">minute_stats</text>
+    <text x="916" y="633" class="font-sans" font-size="11" fill="#475569">分钟均/峰值与电量 kWh</text>
+    <text x="916" y="652" class="font-mono" font-size="11.5" font-weight="700" fill="#3730A3">alert_events</text>
+    <text x="916" y="667" class="font-sans" font-size="11" fill="#475569">上游断联与节点过期日志</text>
+
+    <!-- B Bottom Right: SampleStore -->
+    <rect x="1094" y="538" width="192" height="148" rx="12" fill="#FFFFFF" stroke="#A5B4FC" stroke-width="1.3" filter="url(#softShadow)"/>
+    <g transform="translate(1106, 553)">
+      <ellipse cx="11" cy="5" rx="10" ry="4.5" fill="#EDE9FE" stroke="#7C3AED" stroke-width="1.4"/>
+      <path d="M 1 5 L 1 21 C 1 24 21 24 21 21 L 21 5" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.4"/>
+      <path d="M 1 13 C 1 16 21 16 21 13" fill="none" stroke="#7C3AED" stroke-width="1.1"/>
+    </g>
+    <text x="1136" y="566" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">全量分层归档库</text>
+    <text x="1136" y="584" class="font-mono" font-size="11" fill="#6D28D9">SampleStore</text>
+    <rect x="1106" y="598" width="168" height="35" rx="7" fill="#EEF2FF" stroke="#C7D2FE" stroke-width="1"/>
+    <text x="1116" y="614" class="font-sans" font-size="11.5" font-weight="700" fill="#3730A3">热存：30 天原始样本</text>
+    <text x="1116" y="628" class="font-mono" font-size="10" fill="#6366F1">power_samples</text>
+    <rect x="1106" y="639" width="168" height="35" rx="7" fill="#F5F3FF" stroke="#DDD6FE" stroke-width="1"/>
+    <text x="1116" y="655" class="font-sans" font-size="11.5" font-weight="700" fill="#6D28D9">冷归档：按小时 gzip 压缩</text>
+    <text x="1116" y="669" class="font-sans" font-size="10" fill="#7C3AED">&gt;60 天自动二次深压 (level 9)</text>
+  </g>
+
+  <!-- ==================== CONNECTOR B -> USER ==================== -->
+  <g id="conn-b-u">
+    <line x1="1306" y1="258" x2="1374" y2="258" stroke="#D97706" stroke-width="3" marker-start="url(#arrowAmber)" marker-end="url(#arrowAmber)"/>
+    <rect x="1309" y="206" width="62" height="40" rx="8" fill="#FFFFFF" stroke="#FCD34D" stroke-width="1.4" filter="url(#softShadow)"/>
+    <text x="1340" y="224" text-anchor="middle" class="font-mono" font-size="11" font-weight="700" fill="#B45309">:18088</text>
+    <text x="1340" y="240" text-anchor="middle" class="font-sans" font-size="10.5" fill="#78350F">5s 刷新</text>
+  </g>
+
+  <!-- ==================== COLUMN 4: MONITOR TERMINAL ==================== -->
+  <g id="col-u">
+    <rect x="1380" y="132" width="176" height="572" rx="16" fill="#FFFBEB" stroke="#FCD34D" stroke-width="1.5"/>
+    <path d="M 1380 148 Q 1380 132 1396 132 L 1540 132 Q 1556 132 1556 148 L 1556 188 L 1380 188 Z" fill="url(#uHeader)"/>
+    <text x="1396" y="159" class="font-sans" font-size="18" font-weight="700" fill="#FFFFFF">展示大屏终端</text>
+    <text x="1396" y="178" class="font-sans" font-size="12" fill="#FEF3C7">运维监控浏览器</text>
+
+    <!-- 5 Dashboard Module Cards -->
+    <g transform="translate(1392, 206)">
+      <rect x="0" y="0" width="152" height="84" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.3" filter="url(#softShadow)"/>
+      <rect x="0" y="0" width="152" height="4" rx="2" fill="#F59E0B"/>
+      <text x="12" y="26" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">顶部 5 维 KPI</text>
+      <text x="12" y="46" class="font-sans" font-size="11" fill="#475569">集群总功耗 · 日/7日电量</text>
+      <text x="12" y="64" class="font-sans" font-size="11" fill="#64748B">5min 峰值 · 最高机柜</text>
+
+      <rect x="0" y="99" width="152" height="84" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.3" filter="url(#softShadow)"/>
+      <rect x="0" y="99" width="152" height="4" rx="2" fill="#2563EB"/>
+      <text x="12" y="125" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">机柜 / 节点总览</text>
+      <text x="12" y="145" class="font-sans" font-size="11" fill="#475569">按机柜视图一键下钻</text>
+      <text x="12" y="163" class="font-sans" font-size="11" fill="#64748B">支持搜索与仅看异常</text>
+
+      <rect x="0" y="198" width="152" height="84" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.3" filter="url(#softShadow)"/>
+      <rect x="0" y="198" width="152" height="4" rx="2" fill="#0D9488"/>
+      <text x="12" y="224" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">多时段功耗趋势</text>
+      <text x="12" y="244" class="font-sans" font-size="11" fill="#475569">实时 5min · 当天 0–24h</text>
+      <text x="12" y="262" class="font-sans" font-size="11" fill="#64748B">近 7 天 · 近 30 天曲线</text>
+
+      <rect x="0" y="297" width="152" height="84" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.3" filter="url(#softShadow)"/>
+      <rect x="0" y="297" width="152" height="4" rx="2" fill="#4F46E5"/>
+      <text x="12" y="323" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">机柜功耗排行</text>
+      <text x="12" y="343" class="font-sans" font-size="11" fill="#475569">按机柜 / 按节点切换</text>
+      <text x="12" y="361" class="font-sans" font-size="11" fill="#64748B">点击机柜联动过滤总览</text>
+
+      <rect x="0" y="396" width="152" height="84" rx="10" fill="#FFFFFF" stroke="#FDE68A" stroke-width="1.3" filter="url(#softShadow)"/>
+      <rect x="0" y="396" width="152" height="4" rx="2" fill="#7C3AED"/>
+      <text x="12" y="422" class="font-sans" font-size="13.5" font-weight="700" fill="#0F172A">日志与作业能耗</text>
+      <text x="12" y="442" class="font-sans" font-size="11" fill="#475569">异常断联告警追溯</text>
+      <text x="12" y="460" class="font-sans" font-size="11" fill="#64748B">Slurm 作业能耗估算</text>
+    </g>
+  </g>
+
+  <!-- ==================== BOTTOM SUMMARY STRIP ==================== -->
+  <g transform="translate(44, 728)">
+    <!-- Highlight 1 -->
+    <rect x="0" y="0" width="364" height="128" rx="14" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.3"/>
+    <rect x="0" y="18" width="6" height="92" rx="3" fill="#0D9488"/>
+    <text x="22" y="36" class="font-sans" font-size="15" font-weight="700" fill="#0F766E">01 · 三层分级存储与压缩</text>
+    <text x="22" y="62" class="font-sans" font-size="12.5" fill="#334155">C 端冷备 1 天 → A 端热存 15 天 → B 端全量 30 天</text>
+    <text x="22" y="84" class="font-sans" font-size="12" fill="#64748B">B 端超期样本自动按节点+小时 gzip 分段压缩，</text>
+    <text x="22" y="104" class="font-sans" font-size="12" fill="#64748B">超过 60 天自动升至高压缩比，按需解压查询。</text>
+
+    <!-- Highlight 2 -->
+    <rect x="383" y="0" width="364" height="128" rx="14" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.3"/>
+    <rect x="383" y="18" width="6" height="92" rx="3" fill="#2563EB"/>
+    <text x="405" y="36" class="font-sans" font-size="15" font-weight="700" fill="#1D4ED8">02 · 全离线交付与安全传输</text>
+    <text x="405" y="62" class="font-sans" font-size="12.5" fill="#334155">三端打包内置 ARM64 镜像，超算断网一键启动</text>
+    <text x="405" y="84" class="font-sans" font-size="12" fill="#64748B">C↔A、A↔B 强制 mTLS 双向证书认证；容器</text>
+    <text x="405" y="104" class="font-sans" font-size="12" fill="#64748B">采用 host 网络，B 端对外仅暴露 Nginx :18088。</text>
+
+    <!-- Highlight 3 -->
+    <rect x="766" y="0" width="364" height="128" rx="14" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.3"/>
+    <rect x="766" y="18" width="6" height="92" rx="3" fill="#4F46E5"/>
+    <text x="788" y="36" class="font-sans" font-size="15" font-weight="700" fill="#4338CA">03 · 双模式物理隔离</text>
+    <text x="788" y="62" class="font-sans" font-size="12.5" fill="#334155">支持 simulated / real 模式通过 site.env 切换</text>
+    <text x="788" y="84" class="font-sans" font-size="12" fill="#64748B">模拟库与真实库分文件存储；无 C 端环境下可由</text>
+    <text x="788" y="104" class="font-sans" font-size="12" fill="#64748B">A 端内置模拟器驱动全链路联调与功能验收。</text>
+
+    <!-- Highlight 4 -->
+    <rect x="1148" y="0" width="364" height="128" rx="14" fill="#F8FAFC" stroke="#E2E8F0" stroke-width="1.3"/>
+    <rect x="1148" y="18" width="6" height="92" rx="3" fill="#D97706"/>
+    <text x="1170" y="36" class="font-sans" font-size="15" font-weight="700" fill="#B45309">04 · 断点续传与数据防重</text>
+    <text x="1170" y="62" class="font-sans" font-size="12.5" fill="#334155">全链路主动拉取，基于持久化游标分页补拉</text>
+    <text x="1170" y="84" class="font-sans" font-size="12" fill="#64748B">服务重启或网络抖动恢复后自动续传历史样本，</text>
+    <text x="1170" y="104" class="font-sans" font-size="12" fill="#64748B">按 (node_id, ts) 唯一约束确保统计不重复计数。</text>
+  </g>
+</svg>

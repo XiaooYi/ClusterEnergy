@@ -405,7 +405,7 @@ class EnergyStore:
 
 class GatewayState:
     def __init__(self, upstream, context, stats, archive, interval, retention, hot_days, mode, jobs_file,
-                 sim_clock_offset_seconds=0):
+                 sim_clock_offset_seconds=0, storage_backend="sqlite"):
         self.upstream = upstream
         self.context = context
         self.stats = stats
@@ -414,6 +414,7 @@ class GatewayState:
         self.retention = retention
         self.hot_days = hot_days
         self.mode = mode
+        self.storage_backend = storage_backend
         self.jobs_file = jobs_file
         self.sim_clock_offset = timedelta(seconds=sim_clock_offset_seconds)
         self.snapshot = {"nodes": [], "racks": [], "cluster": {}, "mode": mode}
@@ -478,7 +479,8 @@ class GatewayState:
 
     def status(self):
         return {"upstream_ok": self.upstream_ok, "upstream_error": self.upstream_error,
-                "history_error": self.history_error, "history_gap": self.history_gap}
+                "history_error": self.history_error, "history_gap": self.history_gap,
+                "storage": self.storage_backend}
 
     def read_snapshot(self):
         snapshot = self.snapshot
@@ -565,8 +567,15 @@ def main():
     parser.add_argument("--mode", choices=["real", "simulated"], default="real")
     parser.add_argument("--sim-clock-offset-seconds", type=int, default=0,
                         help="Measured application clock correction for simulated samples")
+    parser.add_argument("--storage", choices=["sqlite", "mysql"], default="sqlite")
     parser.add_argument("--db")
     parser.add_argument("--archive-db")
+    parser.add_argument("--mysql-host", default="127.0.0.1")
+    parser.add_argument("--mysql-port", type=int, default=3306)
+    parser.add_argument("--mysql-user", default="clusterenergy")
+    parser.add_argument("--mysql-password", default=None)
+    parser.add_argument("--mysql-db")
+    parser.add_argument("--mysql-wait-seconds", type=int, default=60)
     parser.add_argument("--retention-days", type=float, default=30)
     parser.add_argument("--hot-days", type=float, default=30)
     parser.add_argument("--jobs-file")
@@ -581,11 +590,28 @@ def main():
     if not args.upstream.startswith("https://"):
         parser.error("A upstream must use HTTPS")
     context = create_client_ssl_context(args.ca, args.cert, args.key)
-    stats_path = args.db or f"runtime/b-{args.mode}.sqlite"
-    stats = EnergyStore(stats_path)
-    archive = SampleStore(args.archive_db or str(Path(stats_path).with_suffix(".samples.sqlite")))
+    if args.storage == "mysql":
+        from common.mysql_store import MySQLConfig, MySQLEnergyStore, MySQLSampleStore
+
+        mysql_password = args.mysql_password if args.mysql_password is not None else os.environ.get("CE_MYSQL_PASSWORD", "")
+        mysql_db = args.mysql_db or f"clusterenergy_{args.mode}"
+        mysql_cfg = MySQLConfig(
+            host=args.mysql_host,
+            port=args.mysql_port,
+            user=args.mysql_user,
+            password=mysql_password,
+            database=mysql_db,
+            wait_seconds=args.mysql_wait_seconds,
+        )
+        stats = MySQLEnergyStore(mysql_cfg)
+        archive = MySQLSampleStore(mysql_cfg)
+    else:
+        stats_path = args.db or f"runtime/b-{args.mode}.sqlite"
+        stats = EnergyStore(stats_path)
+        archive = SampleStore(args.archive_db or str(Path(stats_path).with_suffix(".samples.sqlite")))
     state = GatewayState(args.upstream, context, stats, archive, args.interval, args.retention_days,
-                         args.hot_days, args.mode, args.jobs_file, args.sim_clock_offset_seconds)
+                         args.hot_days, args.mode, args.jobs_file, args.sim_clock_offset_seconds,
+                         storage_backend=args.storage)
     GatewayHandler.state = state
     stop = threading.Event()
     server = ThreadingHTTPServer((args.bind, args.port), GatewayHandler)

@@ -58,6 +58,9 @@ cd a
   ```bash
   CE_MODE=simulated
   CE_A_UPSTREAM=https://<A节点IP或主机名>:19200
+  # 可选：切换 B 端存储为 MySQL（默认 sqlite；设为 mysql 时自动拉起包内 ARM64 MySQL 容器）
+  CE_STORAGE=mysql
+  CE_MYSQL_PASSWORD=clusterenergy123
   ```
 
 **方案 B：真实数据模式（部署 C + A + B）**
@@ -106,6 +109,9 @@ bash deploy.sh status ./site.env
 | `CE_A_PORT` / `CE_C_PORT` / `CE_WEB_PORT` | `19200` / `19100` / `18088` | 各端监听端口（B 网关内部端口 `CE_GATEWAY_PORT=18081`） |
 | `CE_CERTS_DIR` / `CE_CONFIG_DIR` | `./certs` / `./config` | 证书目录与可选配置目录 |
 | `CE_DATA_DIR` | `clusterenergy-<角色>-data` | SQLite 数据卷名或宿主机绝对路径 |
+| `CE_STORAGE` | `sqlite` | B 端存储引擎：`sqlite` 或 `mysql`（B 包已内置 ARM64 MySQL 8.0 镜像） |
+| `CE_MYSQL_HOST` / `CE_MYSQL_PORT` / `CE_MYSQL_DB` | `127.0.0.1` / `3306` / `clusterenergy_<模式>` | `CE_STORAGE=mysql` 时生效；若填远端 IP 则自动复用外部 MySQL，不启动本地容器 |
+| `CE_MYSQL_USER` / `CE_MYSQL_PASSWORD` / `CE_MYSQL_DATA_DIR` | `clusterenergy` / `clusterenergy123` / `clusterenergy-b-mysql-data` | MySQL 账号密码与持久化数据卷/目录（模拟与真实模式自动分库） |
 | `CE_C_RETENTION_DAYS` / `CE_A_RETENTION_DAYS` / `CE_B_RETENTION_DAYS` | `1` / `15` / `30` | C 冷备（0.5–3 天）、A 热存、B 归档保留天数（B 超过 `CE_B_HOT_DAYS=30` 自动按小时 gzip 分段压缩） |
 | `CE_JOBS_DIR` | 未启用 | B 端 Slurm 作业 JSON 目录（配合 `poll_slurm.py` 使用） |
 
