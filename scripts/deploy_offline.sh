@@ -14,7 +14,7 @@ if [[ -n "${2:-}" ]]; then
 fi
 name="${CE_NAME:-clusterenergy-$role}"
 mode="${CE_MODE:-real}"
-storage="${CE_STORAGE:-sqlite}"
+storage="${CE_STORAGE:-mysql}"
 certs="${CE_CERTS_DIR:-$root/certs}"
 config="${CE_CONFIG_DIR:-$root/config}"
 data="${CE_DATA_DIR:-$name-data}"
