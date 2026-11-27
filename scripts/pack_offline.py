@@ -60,13 +60,14 @@ def package(roles, platform, out, builder=None, images_dir=None, base_images=Non
                     build_image(name, image, platform, tar_path, builder, base_images or {})
                 verify_platform(tar_path, platform, image)
                 images.append(tar_path)
-            (staging / "platform.txt").write_text(platform + "\n", encoding="ascii")
-            (staging / "role.txt").write_text(role + "\n", encoding="ascii")
+            (staging / "platform.txt").write_bytes(f"{platform}\n".encode("ascii"))
+            (staging / "role.txt").write_bytes(f"{role}\n".encode("ascii"))
             bundle_name = f"clusterenergy-{role}-{arch}.tar.gz"
             bundle_path = staging / bundle_name
             with tarfile.open(bundle_path, "w:gz") as tar:
                 scripts = [(ROOT / "scripts" / "deploy_offline.sh", "deploy.sh"),
                            (ROOT / "README.md", "README.md"),
+                           (ROOT / "部署文档.md", "部署文档.md"),
                            (staging / "platform.txt", "platform.txt"),
                            (staging / "role.txt", "role.txt")]
                 if role == "b":
@@ -76,7 +77,7 @@ def package(roles, platform, out, builder=None, images_dir=None, base_images=Non
             digest = sha256(bundle_path)
             bundle_path.replace(out / bundle_name)
             checksum = out / (bundle_name + ".sha256")
-            checksum.write_text(f"{digest}  {bundle_name}\n", encoding="ascii")
+            checksum.write_bytes(f"{digest}  {bundle_name}\n".encode("ascii"))
             print(f"{bundle_name} sha256={digest}", flush=True)
 
 
